@@ -1,8 +1,9 @@
 // Copyright (c) 2025 lws
 // TGA (Truevision Targa) image decoder
 //
+// TGA is a simple raster graphics file format widely used in games and VFX.
 // Supported formats:
-//   - Type 2: Uncompressed true-color (24/32-bit)
+//   - Type 2: Uncompressed true-color (RGB/RGBA, 24/32-bit)
 //   - Type 3: Uncompressed grayscale (8-bit)
 //   - Type 10: RLE compressed true-color (24/32-bit)
 //   - Type 11: RLE compressed grayscale (8-bit)
@@ -25,7 +26,7 @@ struct TgaDecoder {
   pixel_depth : Int
   image_descriptor : Int
   data_offset : Int
-  rle: Bool
+  rle : Bool
 }
 
 fn TgaDecoder::new(data : Bytes) -> Result[TgaDecoder, String]! {
@@ -36,6 +37,7 @@ fn TgaDecoder::new(data : Bytes) -> Result[TgaDecoder, String]! {
   let color_map_type = data[1].to_int()
   let image_type = data[2].to_int()
 
+  // Read image specification
   let width = read_u16_le(data, 12)?
   let height = read_u16_le(data, 14)?
   let pixel_depth = data[16].to_int()
@@ -45,26 +47,30 @@ fn TgaDecoder::new(data : Bytes) -> Result[TgaDecoder, String]! {
     return Err("TGA: invalid dimensions")
   }
 
+  // Supported image types
   let rle = match image_type {
-    2 => false
-    3 => false
-    10 => true
-    11 => true
+    2 => false   // Uncompressed true-color
+    3 => false   // Uncompressed grayscale
+    10 => true   // RLE true-color
+    11 => true   // RLE grayscale
     _ => return Err("TGA: unsupported image type: \(image_type)")
   }
 
+  // Supported pixel depths
   if pixel_depth != 8 && pixel_depth != 16 && pixel_depth != 24 && pixel_depth != 32 {
     return Err("TGA: unsupported pixel depth: \(pixel_depth)")
   }
 
+  // Calculate data offset: header (18) + ID field + color map
   let id_offset = 18 + id_length
-  let mut _cmap_size = 0
+  let mut _color_map_size = 0
   if color_map_type == 1 {
+    let cm_first = read_u16_le(data, 3)?
     let cm_length = read_u16_le(data, 5)?
     let cm_entry_size = data[7].to_int()
-    _cmap_size = cm_length * ((cm_entry_size + 7) / 8)
+    _color_map_size = cm_length * ((cm_entry_size + 7) / 8)
   }
-  let data_offset = id_offset + _cmap_size
+  let data_offset = id_offset + _color_map_size
 
   Ok({
     data: data, id_length: id_length, image_type: image_type,
@@ -82,22 +88,26 @@ fn TgaDecoder::decode(self : TgaDecoder) -> Result[Image, String]! {
   }
 }
 
+/// Bytes per pixel for the source TGA data
 fn TgaDecoder::src_bpp(self : TgaDecoder) -> Int {
   self.pixel_depth / 8
 }
 
+/// Image origin: true = top-left, false = bottom-left
 fn TgaDecoder::top_origin(self : TgaDecoder) -> Bool {
   let origin_bits = (self.image_descriptor >> 4) & 0x3
   origin_bits == 2 || origin_bits == 3
 }
 
-/// BUG: top_origin should NOT flip (file is already top-to-bottom),
-/// bottom-left should flip (file stores bottom row first)
+/// Map destination row to source row in file
+/// Output is always top-to-bottom. TGA can store top-to-bottom or bottom-to-top.
+/// - If file is top-to-bottom (top_origin): src_row = dst_row (no flip needed)
+/// - If file is bottom-to-top: src_row = height - 1 - dst_row (flip)
 fn TgaDecoder::src_row(self : TgaDecoder, dst_row : Int) -> Int {
   if self.top_origin() {
-    self.height - 1 - dst_row  // BUG: should be `dst_row`
+    dst_row  // File is already top-to-bottom, matches output order
   } else {
-    dst_row  // BUG: should be `self.height - 1 - dst_row`
+    self.height - 1 - dst_row  // File is bottom-to-top, flip to match output
   }
 }
 
@@ -108,6 +118,7 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
   let out_size = self.width * self.height * out_bpp
   let _buf = Buffer::new(out_size)
 
+  // Row stride (TGA rows are tightly packed, no padding)
   let src_stride = self.width * src_bpp
 
   for dst_y = 0; dst_y < self.height; dst_y = dst_y + 1 {
@@ -123,8 +134,10 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
       let dst_pixel_offset = (dst_y * self.width + x) * out_bpp
 
       if self.pixel_depth == 8 {
+        // Grayscale
         _buf[dst_pixel_offset] = self.data[src_pixel_offset]
       } else if self.pixel_depth == 16 {
+        // 16-bit: A1R5G5B5 or grayscale+alpha
         let lo = self.data[src_pixel_offset].to_int()
         let hi = self.data[src_pixel_offset + 1].to_int()
         let val = lo | (hi << 8)
@@ -137,11 +150,13 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
         _buf[dst_pixel_offset + 2] = b.to_byte()
         _buf[dst_pixel_offset + 3] = a.to_byte()
       } else if self.pixel_depth == 24 {
+        // BGR → RGB
         _buf[dst_pixel_offset] = self.data[src_pixel_offset + 2]      // R
         _buf[dst_pixel_offset + 1] = self.data[src_pixel_offset + 1]  // G
         _buf[dst_pixel_offset + 2] = self.data[src_pixel_offset]      // B
         _buf[dst_pixel_offset + 3] = '\xFF'                           // A
       } else {
+        // 32-bit BGRA → RGBA
         _buf[dst_pixel_offset] = self.data[src_pixel_offset + 2]      // R
         _buf[dst_pixel_offset + 1] = self.data[src_pixel_offset + 1]  // G
         _buf[dst_pixel_offset + 2] = self.data[src_pixel_offset]      // B
@@ -155,6 +170,7 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
 }
 
 /// Decode RLE-compressed TGA data
+/// RLE packets are read sequentially (not row-by-row), then scattered by row flipping
 fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
   let src_bpp = self.src_bpp()
   let out_bpp = if self.pixel_depth <= 8 { 1 } else { 4 }
@@ -171,36 +187,41 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
     }
     let packet_header = self.data[pos].to_int()
     pos = pos + 1
-    let packet_type = (packet_header >> 7) & 1
-    let count = (packet_header & 0x7F) + 1
+    let packet_type = (packet_header >> 7) & 1  // 1 = RLE, 0 = raw
+    let count = (packet_header & 0x7F) + 1       // 1..128 pixels
 
     if count > total_pixels - pixel_idx {
       return Err("TGA: RLE packet exceeds image pixel count")
     }
 
     if packet_type == 1 {
+      // RLE packet: repeat the next pixel `count` times
       if pos + src_bpp > self.data.length() {
         return Err("TGA: truncated RLE pixel data")
       }
       let pixel_data = self.data[pos:pos + src_bpp]
       for _i = 0; _i < count; _i = _i + 1 {
-        let dst_y = pixel_idx / self.width
-        let dst_x = pixel_idx % self.width
-        let src_y = self.src_row(dst_y)
-        let dst_pixel_offset = (src_y * self.width + dst_x) * out_bpp
+        // Compute output position from pixel index (sequential in file order)
+        let file_y = pixel_idx / self.width
+        let file_x = pixel_idx % self.width
+        // Map file row to output row (file may be bottom-to-top)
+        let dst_y = self.src_row(file_y)
+        let dst_pixel_offset = (dst_y * self.width + file_x) * out_bpp
         write_tga_pixel(_buf, dst_pixel_offset, pixel_data, 0, self.pixel_depth, out_bpp)?
         pixel_idx = pixel_idx + 1
       }
       pos = pos + src_bpp
     } else {
+      // Raw packet: read `count` pixels literally
       for _i = 0; _i < count; _i = _i + 1 {
         if pos + src_bpp > self.data.length() {
           return Err("TGA: truncated raw pixel data")
         }
-        let dst_y = pixel_idx / self.width
-        let dst_x = pixel_idx % self.width
-        let src_y = self.src_row(dst_y)
-        let dst_pixel_offset = (src_y * self.width + dst_x) * out_bpp
+        let file_y = pixel_idx / self.width
+        let file_x = pixel_idx % self.width
+        // Map file row to output row
+        let dst_y = self.src_row(file_y)
+        let dst_pixel_offset = (dst_y * self.width + file_x) * out_bpp
         write_tga_pixel(_buf, dst_pixel_offset, self.data, pos, self.pixel_depth, out_bpp)?
         pos = pos + src_bpp
         pixel_idx = pixel_idx + 1
@@ -244,6 +265,7 @@ fn write_tga_pixel(
     _buf[dst_offset + 2] = src[src_offset]      // B
     _buf[dst_offset + 3] = '\xFF'               // A
   } else {
+    // 32-bit BGRA → RGBA
     _buf[dst_offset] = src[src_offset + 2]      // R
     _buf[dst_offset + 1] = src[src_offset + 1]  // G
     _buf[dst_offset + 2] = src[src_offset]      // B
