@@ -526,11 +526,6 @@ fn a7dims(w : Int, h : Int, pass : Int) -> (Int, Int) {
    if h > ys { (h - 1 - ys) / yst + 1 } else { 0 })
 }
 
-/// Compute CRC32 of chunk type + chunk data
-fn crc32_chunk(chunk_type : Bytes, chunk_data : Bytes) -> Int {
-  crc32_concat(crc32(chunk_type), chunk_data)
-}
-
 /// Decode a PNG image from raw bytes
 pub fn decode_png(data : Bytes) -> Result[Image, String] {
   // Verify PNG signature

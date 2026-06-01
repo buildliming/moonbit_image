@@ -156,20 +156,80 @@ pub fn Image::get_pixel(self : Image, x : Int, y : Int) -> Color {
 }
 
 /// Convert this image to RGBA8 format (always 4 bytes per pixel)
+/// Uses per-format bulk loops for performance (avoids per-pixel match dispatch)
 pub fn Image::to_rgba8(self : Image) -> Image {
   if self.format == PixelFormat::RGBA8 {
     return self
   }
-  let out_size = self.width * self.height * 4
+  let pixel_count = self.width * self.height
+  let out_size = pixel_count * 4
   let _buf = Buffer::new(out_size)
-  for y = 0; y < self.height; y = y + 1 {
-    for x = 0; x < self.width; x = x + 1 {
-      let c = self.get_pixel(x, y)
-      let offset = (y * self.width + x) * 4
-      _buf[offset] = c.r.to_byte()
-      _buf[offset + 1] = c.g.to_byte()
-      _buf[offset + 2] = c.b.to_byte()
-      _buf[offset + 3] = c.a.to_byte()
+
+  match self.format {
+    PixelFormat::Gray8 => {
+      for i = 0; i < pixel_count; i = i + 1 {
+        let v = self.data[i].to_int()
+        let dst = i * 4
+        _buf[dst] = v.to_byte()
+        _buf[dst + 1] = v.to_byte()
+        _buf[dst + 2] = v.to_byte()
+        _buf[dst + 3] = '\xFF'
+      }
+    }
+    PixelFormat::GrayA8 => {
+      for i = 0; i < pixel_count; i = i + 1 {
+        let src = i * 2
+        let v = self.data[src].to_int()
+        let a = self.data[src + 1]
+        let dst = i * 4
+        _buf[dst] = v.to_byte()
+        _buf[dst + 1] = v.to_byte()
+        _buf[dst + 2] = v.to_byte()
+        _buf[dst + 3] = a
+      }
+    }
+    PixelFormat::RGB8 => {
+      for i = 0; i < pixel_count; i = i + 1 {
+        let src = i * 3
+        let dst = i * 4
+        _buf[dst] = self.data[src]
+        _buf[dst + 1] = self.data[src + 1]
+        _buf[dst + 2] = self.data[src + 2]
+        _buf[dst + 3] = '\xFF'
+      }
+    }
+    PixelFormat::BGR8 => {
+      for i = 0; i < pixel_count; i = i + 1 {
+        let src = i * 3
+        let dst = i * 4
+        _buf[dst] = self.data[src + 2]      // R
+        _buf[dst + 1] = self.data[src + 1]  // G
+        _buf[dst + 2] = self.data[src]      // B
+        _buf[dst + 3] = '\xFF'
+      }
+    }
+    PixelFormat::BGRA8 => {
+      for i = 0; i < pixel_count; i = i + 1 {
+        let src = i * 4
+        let dst = i * 4
+        _buf[dst] = self.data[src + 2]      // R
+        _buf[dst + 1] = self.data[src + 1]  // G
+        _buf[dst + 2] = self.data[src]      // B
+        _buf[dst + 3] = self.data[src + 3]  // A
+      }
+    }
+    _ => {
+      // Fallback: per-pixel conversion (should not reach here since RGBA8 is early-returned)
+      for y = 0; y < self.height; y = y + 1 {
+        for x = 0; x < self.width; x = x + 1 {
+          let c = self.get_pixel(x, y)
+          let offset = (y * self.width + x) * 4
+          _buf[offset] = c.r.to_byte()
+          _buf[offset + 1] = c.g.to_byte()
+          _buf[offset + 2] = c.b.to_byte()
+          _buf[offset + 3] = c.a.to_byte()
+        }
+      }
     }
   }
   Image::new(self.width, self.height, PixelFormat::RGBA8, _buf.to_bytes())
@@ -208,14 +268,64 @@ pub(all) fn BitReader::read_bit(self : BitReader) -> Result[(BitReader, Int), St
 }
 
 /// Read n bits as an integer, up to 16 bits
+/// Uses batch byte reading instead of per-bit loops for performance
 pub(all) fn BitReader::read_bits(self : BitReader, n : Int) -> Result[(BitReader, Int), String]! {
+  if n == 0 {
+    return Ok((self, 0))
+  }
+  if n > 16 {
+    return Err("BitReader: cannot read more than 16 bits at once")
+  }
+
   let mut reader = self
   let mut result = 0
-  for _i = 0; _i < n; _i = _i + 1 {
-    let (r, bit) = reader.read_bit()?
-    reader = r
-    result = (result << 1) | bit
+  let mut needed = n
+
+  // Read remaining bits from current partial byte first (these are the MSBs of our result)
+  if reader.bit_pos != 0 {
+    let bits_left = 8 - reader.bit_pos
+    let take = if needed < bits_left { needed } else { bits_left }
+    if reader.byte_pos >= reader.data.length() {
+      return Err("BitReader: unexpected end of data while reading bits")
+    }
+    let byte = reader.data[reader.byte_pos].to_int()
+    // Mask the remaining bits and shift to get the top `take` bits
+    let mask = (1 << bits_left) - 1
+    let val = (byte & mask) >> (bits_left - take)
+    result = val
+    needed = needed - take
+    if take == bits_left {
+      reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0 }
+    } else {
+      reader = { data: reader.data, byte_pos: reader.byte_pos, bit_pos: reader.bit_pos + take }
+    }
+    if needed == 0 {
+      return Ok((reader, result))
+    }
   }
+
+  // Read full bytes (8 bits each)
+  while needed >= 8 {
+    if reader.byte_pos >= reader.data.length() {
+      return Err("BitReader: unexpected end of data while reading bits")
+    }
+    result = (result << 8) | reader.data[reader.byte_pos].to_int()
+    needed = needed - 8
+    reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0 }
+  }
+
+  // Read remaining bits from next byte
+  if needed > 0 {
+    if reader.byte_pos >= reader.data.length() {
+      return Err("BitReader: unexpected end of data while reading bits")
+    }
+    let byte = reader.data[reader.byte_pos].to_int()
+    // Take the top `needed` bits (MSB-first within the byte)
+    let val = byte >> (8 - needed)
+    result = (result << needed) | val
+    reader = { data: reader.data, byte_pos: reader.byte_pos, bit_pos: needed }
+  }
+
   Ok((reader, result))
 }
 
