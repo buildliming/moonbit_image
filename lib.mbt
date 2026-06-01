@@ -1,0 +1,209 @@
+// Copyright (c) 2025 lws
+// Image decoding library for MoonBit - Main entry point
+
+//-----------------------------------------------------------------------------
+// Format Detection
+//-----------------------------------------------------------------------------
+
+/// Detect the image format from magic bytes (file signature)
+/// PNG and QOI have distinctive signatures, BMP has "BM", TGA uses heuristic + footer
+pub fn detect_format(data : Bytes) -> Option[ImageFormat] {
+  if data.length() < 8 {
+    return None
+  }
+
+  // PNG: \x89 P N G \r \n \x1A \n (8-byte signature)
+  if data[0] == '\x89' && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' &&
+     data[4] == '\r' && data[5] == '\n' && data[6] == '\x1A' && data[7] == '\n' {
+    return Some(ImageFormat::PNG)
+  }
+
+  // QOI: q o i f (4-byte magic)
+  if data[0] == 'q' && data[1] == 'o' && data[2] == 'i' && data[3] == 'f' {
+    return Some(ImageFormat::QOI)
+  }
+
+  // BMP: B M (2-byte signature)
+  if data[0] == 'B' && data[1] == 'M' {
+    return Some(ImageFormat::BMP)
+  }
+
+  // TGA detection: check for type 2 footer first (most reliable),
+  // then fall back to header heuristic
+  if detect_tga(data) {
+    return Some(ImageFormat::TGA)
+  }
+
+  None
+}
+
+/// Try to detect TGA by footer or header heuristic
+fn detect_tga(data : Bytes) -> Bool {
+  if data.length() < 18 {
+    return false
+  }
+
+  // Method 1: Check for TGA version 2 footer at end of file
+  // Footer signature: "TRUEVISION-XFILE." at position len-18
+  let footer_sig = "TRUEVISION-XFILE."
+  let len = data.length()
+  if len >= 26 {
+    let footer_start = len - 18
+    let mut matches = true
+    for i = 0; i < 18; i = i + 1 {
+      if data[footer_start + i] != footer_sig[i].to_byte() {
+        matches = false
+        break
+      }
+    }
+    if matches {
+      return true
+    }
+  }
+
+  // Method 2: Header heuristic for type 1 (no footer) TGA files
+  let id_length = data[0].to_int()
+  let color_map_type = data[1].to_int()
+  let image_type = data[2].to_int()
+
+  // Valid TGA image types (2=uncompressed true-color, 3=grayscale, 10=RLE true-color, 11=RLE grayscale)
+  let valid_type = image_type == 2 || image_type == 3 || image_type == 10 || image_type == 11
+  // Valid color map types (0=none, 1=present)
+  let valid_cmap = color_map_type == 0 || color_map_type == 1
+
+  if not(valid_type) || not(valid_cmap) {
+    return false
+  }
+
+  // Validate dimensions
+  let width = (data[12].to_int()) | (data[13].to_int() << 8)
+  let height = (data[14].to_int()) | (data[15].to_int() << 8)
+  if width == 0 || height == 0 {
+    return false
+  }
+
+  let pixel_depth = data[16].to_int()
+  let valid_depth = pixel_depth == 8 || pixel_depth == 16 || pixel_depth == 24 || pixel_depth == 32
+
+  id_length >= 0 && id_length < 256 && valid_depth
+}
+
+//-----------------------------------------------------------------------------
+// Unified Decode API
+//-----------------------------------------------------------------------------
+
+/// Auto-detect format and decode an image from raw bytes
+pub fn decode(data : Bytes) -> Result[Image, String]! {
+  match detect_format(data) {
+    None => Err("Unsupported or unknown image format")
+    Some(format) => decode_by_format(data, format)
+  }
+}
+
+/// Decode an image with a known format
+pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Result[Image, String]! {
+  match format {
+    ImageFormat::BMP => decode_bmp(data)
+    ImageFormat::QOI => decode_qoi(data)
+    ImageFormat::TGA => decode_tga(data)
+    ImageFormat::PNG => decode_png(data)
+  }
+}
+
+//-----------------------------------------------------------------------------
+// Header-only dimension reading (fast, no pixel decoding)
+//-----------------------------------------------------------------------------
+
+/// Get image dimensions from a file header without decoding pixels
+/// Much faster than decode() for inspecting image metadata
+pub fn image_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+  match detect_format(data) {
+    None => Err("Unsupported or unknown image format")
+    Some(format) => match format {
+      ImageFormat::BMP => bmp_dimensions(data)
+      ImageFormat::QOI => qoi_dimensions(data)
+      ImageFormat::TGA => tga_dimensions(data)
+      ImageFormat::PNG => png_dimensions(data)
+    }
+  }
+}
+
+/// Read BMP dimensions from header (fast, no pixel decode)
+fn bmp_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+  if data.length() < 26 {
+    return Err("BMP: file too small for header reading")
+  }
+  let width_raw = read_u32_le(data, 18)?
+  let height_raw = read_u32_le(data, 22)?
+  let height = if height_raw < 0 { -height_raw } else { height_raw }
+  Ok((width_raw, height, ImageFormat::BMP))
+}
+
+/// Read QOI dimensions from header
+fn qoi_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+  if data.length() < 14 {
+    return Err("QOI: file too small for header reading")
+  }
+  let width = read_u32_be(data, 4)?
+  let height = read_u32_be(data, 8)?
+  Ok((width, height, ImageFormat::QOI))
+}
+
+/// Read TGA dimensions from header
+fn tga_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+  if data.length() < 18 {
+    return Err("TGA: file too small for header reading")
+  }
+  let width = read_u16_le(data, 12)?
+  let height = read_u16_le(data, 14)?
+  Ok((width, height, ImageFormat::TGA))
+}
+
+/// Read PNG dimensions from IHDR chunk (fast, only parses the first chunk)
+fn png_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+  // PNG: 8-byte signature + 4-byte length + 4-byte "IHDR" + 13-byte IHDR data
+  if data.length() < 33 {
+    return Err("PNG: file too small for IHDR reading")
+  }
+  // Skip signature (8), read length (4), verify "IHDR" (4)
+  if data[12] != 'I' || data[13] != 'H' || data[14] != 'D' || data[15] != 'R' {
+    return Err("PNG: first chunk is not IHDR")
+  }
+  let width = read_u32_be(data, 16)?
+  let height = read_u32_be(data, 20)?
+  Ok((width, height, ImageFormat::PNG))
+}
+
+//-----------------------------------------------------------------------------
+// Convenience Functions
+//-----------------------------------------------------------------------------
+
+/// Check if data appears to be a supported image format
+pub fn is_supported_format(data : Bytes) -> Bool {
+  match detect_format(data) {
+    None => false
+    Some(_) => true
+  }
+}
+
+/// Get a human-readable string for a pixel format
+pub fn pixel_format_name(format : PixelFormat) -> String {
+  match format {
+    PixelFormat::Gray8 => "Gray8"
+    PixelFormat::GrayA8 => "GrayA8"
+    PixelFormat::RGB8 => "RGB8"
+    PixelFormat::RGBA8 => "RGBA8"
+    PixelFormat::BGR8 => "BGR8"
+    PixelFormat::BGRA8 => "BGRA8"
+  }
+}
+
+/// Get a human-readable string for an image format
+pub fn image_format_name(format : ImageFormat) -> String {
+  match format {
+    ImageFormat::BMP => "BMP"
+    ImageFormat::QOI => "QOI"
+    ImageFormat::TGA => "TGA"
+    ImageFormat::PNG => "PNG"
+  }
+}
