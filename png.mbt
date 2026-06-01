@@ -487,6 +487,7 @@ let png_sig : Array[Byte] = [b'\x89', b'P', b'N', b'G', b'\r', b'\n', b'\x1A', b
 /// PNG color types
 let PC_GRAY  : Int = 0
 let PC_RGB   : Int = 2
+let PC_IDX   : Int = 3
 let PC_GA    : Int = 4
 let PC_RGBA  : Int = 6
 
@@ -501,14 +502,28 @@ fn png_spp(ct : Int) -> Int {
 }
 
 /// Output PixelFormat for a given color type
+/// Indexed color outputs RGBA8 after palette expansion
 fn out_fmt(ct : Int) -> PixelFormat {
   match ct {
-    PC_GRAY => PixelFormat::Gray8
+    PC_GRAY | PC_IDX => PixelFormat::RGBA8
     PC_GA => PixelFormat::GrayA8
     PC_RGB => PixelFormat::RGB8
     PC_RGBA => PixelFormat::RGBA8
     _ => PixelFormat::RGBA8
   }
+}
+
+/// Adam7 interlacing parameters: (x_start, y_start, x_step, y_step)
+let a7_params : Array[(Int, Int, Int, Int)] = [
+  (0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4),
+  (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)
+]
+
+/// Compute sub-image dimensions for an Adam7 pass
+fn a7dims(w : Int, h : Int, pass : Int) -> (Int, Int) {
+  let (xs, ys, xst, yst) = a7_params[pass]
+  (if w > xs { (w - 1 - xs) / xst + 1 } else { 0 },
+   if h > ys { (h - 1 - ys) / yst + 1 } else { 0 })
 }
 
 /// Compute CRC32 of chunk type + chunk data
@@ -528,6 +543,7 @@ pub fn decode_png(data : Bytes) -> Result[Image, String] {
   let mut w = 0; let mut h = 0; let mut bd : Int = 0; let mut ct : Int = 0; let mut il : Int = 0
   let mut cd = Buffer()
   let mut hi = false  // IHDR seen flag
+  let mut pal = Array::make(0, Color::default())
 
   // Chunk parsing loop
   while pos < data.length() {
@@ -561,6 +577,7 @@ pub fn decode_png(data : Bytes) -> Result[Image, String] {
     let ih = chunk_is(cbt, b'I', b'H', b'D', b'R')
     let id = chunk_is(cbt, b'I', b'D', b'A', b'T')
     let ie = chunk_is(cbt, b'I', b'E', b'N', b'D')
+    let ip = chunk_is(cbt, b'P', b'L', b'T', b'E')
 
     if ih {
       // IHDR: image header
@@ -574,7 +591,7 @@ pub fn decode_png(data : Bytes) -> Result[Image, String] {
       // Validate compression and filter method
       if cdat[10].to_int() != 0 { return Err("PNG: bad comp") }
       if cdat[11].to_int() != 0 { return Err("PNG: bad filt") }
-      if il != 0 { return Err("PNG: interlace not yet supported") }
+      if il != 0 && il != 1 { return Err("PNG: bad interlace") }
       hi = true
     } else if id {
       // IDAT: image data
@@ -583,6 +600,15 @@ pub fn decode_png(data : Bytes) -> Result[Image, String] {
     } else if ie {
       // IEND: image end
       break
+    } else if ip {
+      // PLTE: palette
+      if cl % 3 != 0 { return Err("PNG: PLTE len") }
+      let n = cl / 3
+      pal = Array::make(n, Color::default())
+      for i = 0; i < n; i = i + 1 {
+        let o = i * 3
+        pal[i] = Color::new(cdat[o].to_int(), cdat[o + 1].to_int(), cdat[o + 2].to_int(), 255)
+      }
     }
   }
 
@@ -591,10 +617,11 @@ pub fn decode_png(data : Bytes) -> Result[Image, String] {
 
   // Validate color type + bit depth combination
   let vok = match ct {
-    PC_GRAY => bd == 8
-    PC_RGB => bd == 8
-    PC_GA => bd == 8
-    PC_RGBA => bd == 8
+    PC_GRAY => bd == 1 || bd == 2 || bd == 4 || bd == 8 || bd == 16
+    PC_RGB => bd == 8 || bd == 16
+    PC_IDX => bd == 1 || bd == 2 || bd == 4 || bd == 8
+    PC_GA => bd == 8 || bd == 16
+    PC_RGBA => bd == 8 || bd == 16
     _ => false
   }
   if !vok { return Err("PNG: bad color/depth") }
@@ -602,18 +629,22 @@ pub fn decode_png(data : Bytes) -> Result[Image, String] {
   // zlib decompress all IDAT data
   let dec = match zlib_decompress(cd.to_bytes()) { Ok(v) => v; Err(e) => return Err(e) }
 
-  // Decode non-interlaced image
-  decode_plain(w, h, bd, ct, dec)
+  // Decode (interlaced or non-interlaced)
+  if il == 1 {
+    decode_a7(w, h, bd, ct, pal, dec)
+  } else {
+    decode_plain(w, h, bd, ct, pal, dec)
+  }
 }
 
-/// Decode a non-interlaced (il=0) PNG image from decompressed filtered data
+/// Decode a non-interlaced PNG image from decompressed filtered data
 fn decode_plain(
-  w : Int, h : Int, bd : Int, ct : Int, dec : Bytes
+  w : Int, h : Int, bd : Int, ct : Int, pal : Array[Color], dec : Bytes
 ) -> Result[Image, String] {
   let sp = png_spp(ct)
-  let bpp = sp * bd / 8    // bytes per pixel
-  let pitch = w * bpp       // bytes per output row
-  let ssl = w * bpp + 1     // source row stride (filter byte + row data)
+  let bpp = sp * (if bd >= 8 { bd / 8 } else { 1 })
+  let pitch = if bd < 8 { (w * bd * sp + 7) / 8 } else { w * bpp }
+  let ssl = if bd >= 8 { w * bpp + 1 } else { (w * bd * sp + 7) / 8 + 1 }
 
   let arr = Array::make(w * h * bpp, b'\x00')
   let prev = Array::make(pitch, b'\x00')
@@ -636,5 +667,119 @@ fn decode_plain(
     }
   }
 
-  Ok(Image::new(w, h, out_fmt(ct), Bytes::from_array(arr)))
+  let raw = Bytes::from_array(arr)
+  let fb = if ct == PC_IDX && pal.length() > 0 {
+    match idx2rgba(raw, w, h, bd, pal) { Ok(v) => v; Err(e) => return Err(e) }
+  } else {
+    raw
+  }
+  Ok(Image::new(w, h, out_fmt(ct), fb))
+}
+
+/// Decode an Adam7 interlaced PNG image
+fn decode_a7(
+  w : Int, h : Int, bd : Int, ct : Int, pal : Array[Color], dec : Bytes
+) -> Result[Image, String] {
+  let sp = png_spp(ct)
+  let bpp = if bd >= 8 { sp * bd / 8 } else { 1 }
+  let oarr = Array::make(w * h * bpp, b'\x00')
+  let mut sp_off = 0
+
+  for pass = 0; pass < 7; pass = pass + 1 {
+    let (pw, ph) = a7dims(w, h, pass)
+    if pw == 0 || ph == 0 { continue }
+
+    let (xs, ys, xst, yst) = a7_params[pass]
+    let ppitch = if bd < 8 { (pw * bd * sp + 7) / 8 } else { pw * bpp }
+    let psl = if bd >= 8 { pw * bpp + 1 } else { (pw * bd * sp + 7) / 8 + 1 }
+
+    let parr = Array::make(ph * ppitch, b'\x00')
+    let prev = Array::make(ppitch, b'\x00')
+
+    for y = 0; y < ph; y = y + 1 {
+      if sp_off + psl > dec.length() { return Err("PNG: short a7") }
+      let ft = dec[sp_off].to_int()
+      let rd = dec[sp_off + 1:sp_off + psl]
+      sp_off = sp_off + psl
+
+      match apply_filter(ft, rd, prev, y, bpp, parr, ppitch) {
+        Ok(_) => ()
+        Err(e) => return Err(e)
+      }
+
+      let ro = y * ppitch
+      for x = 0; x < ppitch && ro + x < parr.length(); x = x + 1 {
+        prev[x] = parr[ro + x]
+      }
+    }
+
+    // Scatter pass pixels to output image
+    for py = 0; py < ph; py = py + 1 {
+      let oy = ys + py * yst
+      for px = 0; px < pw; px = px + 1 {
+        let ox = xs + px * xst
+        for b = 0; b < bpp; b = b + 1 {
+          let si = py * ppitch + px * bpp + b
+          let di = oy * (w * bpp) + ox * bpp + b
+          if si < parr.length() && di < oarr.length() { oarr[di] = parr[si] }
+        }
+      }
+    }
+  }
+
+  let raw = Bytes::from_array(oarr)
+  let fb = if ct == PC_IDX && pal.length() > 0 {
+    match idx2rgba(raw, w, h, bd, pal) { Ok(v) => v; Err(e) => return Err(e) }
+  } else {
+    raw
+  }
+  Ok(Image::new(w, h, out_fmt(ct), fb))
+}
+
+/// Convert indexed pixel data to RGBA using a palette
+fn idx2rgba(
+  data : Bytes, w : Int, h : Int, bd : Int, pal : Array[Color]
+) -> Result[Bytes, String] {
+  let nc = pal.length()
+  let n = w * h
+  let arr = Array::make(n * 4, b'\x00')
+
+  if bd == 8 {
+    for i = 0; i < n; i = i + 1 {
+      let idx = data[i].to_int()
+      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let d = i * 4
+      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
+      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+    }
+  } else if bd == 4 {
+    for i = 0; i < n; i = i + 1 {
+      let bv = data[i / 2].to_int()
+      let idx = if i % 2 == 0 { (bv >> 4) & 0xF } else { bv & 0xF }
+      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let d = i * 4
+      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
+      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+    }
+  } else if bd == 2 {
+    for i = 0; i < n; i = i + 1 {
+      let bv = data[i / 4].to_int()
+      let idx = (bv >> (6 - (i % 4) * 2)) & 0x3
+      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let d = i * 4
+      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
+      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+    }
+  } else if bd == 1 {
+    for i = 0; i < n; i = i + 1 {
+      let idx = (data[i / 8].to_int() >> (7 - i % 8)) & 1
+      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let d = i * 4
+      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
+      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+    }
+  } else {
+    return Err("PNG: bad idx depth")
+  }
+  Ok(Bytes::from_array(arr))
 }
