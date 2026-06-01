@@ -476,3 +476,165 @@ fn apply_filter(
   }
   Ok(())
 }
+
+//-----------------------------------------------------------------------------
+// PNG Decoder (non-interlaced, 8-bit grayscale/RGB/RGBA)
+//-----------------------------------------------------------------------------
+
+/// PNG 8-byte file signature
+let png_sig : Array[Byte] = [b'\x89', b'P', b'N', b'G', b'\r', b'\n', b'\x1A', b'\n']
+
+/// PNG color types
+let PC_GRAY  : Int = 0
+let PC_RGB   : Int = 2
+let PC_GA    : Int = 4
+let PC_RGBA  : Int = 6
+
+/// Check if a chunk type matches a 4-character code
+fn chunk_is(b : Bytes, c0 : Byte, c1 : Byte, c2 : Byte, c3 : Byte) -> Bool {
+  b.length() >= 4 && b[0] == c0 && b[1] == c1 && b[2] == c2 && b[3] == c3
+}
+
+/// Bytes per pixel for a given color type (at 8-bit depth)
+fn png_spp(ct : Int) -> Int {
+  match ct { 0 => 1; 2 => 3; 4 => 2; 6 => 4; _ => 1 }
+}
+
+/// Output PixelFormat for a given color type
+fn out_fmt(ct : Int) -> PixelFormat {
+  match ct {
+    PC_GRAY => PixelFormat::Gray8
+    PC_GA => PixelFormat::GrayA8
+    PC_RGB => PixelFormat::RGB8
+    PC_RGBA => PixelFormat::RGBA8
+    _ => PixelFormat::RGBA8
+  }
+}
+
+/// Compute CRC32 of chunk type + chunk data
+fn crc32_chunk(chunk_type : Bytes, chunk_data : Bytes) -> Int {
+  crc32_concat(crc32(chunk_type), chunk_data)
+}
+
+/// Decode a PNG image from raw bytes
+pub fn decode_png(data : Bytes) -> Result[Image, String] {
+  // Verify PNG signature
+  if data.length() < 8 { return Err("PNG: too small") }
+  for i = 0; i < 8; i = i + 1 {
+    if data[i] != png_sig[i] { return Err("PNG: bad sig") }
+  }
+
+  let mut pos = 8
+  let mut w = 0; let mut h = 0; let mut bd : Int = 0; let mut ct : Int = 0; let mut il : Int = 0
+  let mut cd = Buffer()
+  let mut hi = false  // IHDR seen flag
+
+  // Chunk parsing loop
+  while pos < data.length() {
+    if pos + 8 > data.length() { return Err("PNG: trunc chunk") }
+
+    // Read chunk length (4 bytes, big-endian)
+    let cl = match read_u32_be(data, pos) { Ok(v) => v; Err(e) => return Err(e) }
+    pos = pos + 4
+
+    // Read chunk type (4 bytes)
+    let cbt = data[pos:pos + 4]
+    pos = pos + 4
+
+    if pos + cl + 4 > data.length() { return Err("PNG: trunc chunk data") }
+
+    // Read chunk data
+    let cdat = data[pos:pos + cl]
+    pos = pos + cl
+
+    // Read stored CRC
+    let sc = match read_u32_be(data, pos) { Ok(v) => v; Err(e) => return Err(e) }
+    pos = pos + 4
+
+    // Verify CRC for critical chunks (uppercase first letter)
+    let is_critical = (cbt[0].to_int() & 32) == 0
+    if is_critical {
+      let ccrc = crc32_chunk(cbt, cdat)
+      if ccrc != sc { return Err("PNG: CRC mismatch") }
+    }
+
+    let ih = chunk_is(cbt, b'I', b'H', b'D', b'R')
+    let id = chunk_is(cbt, b'I', b'D', b'A', b'T')
+    let ie = chunk_is(cbt, b'I', b'E', b'N', b'D')
+
+    if ih {
+      // IHDR: image header
+      if cl != 13 { return Err("PNG: IHDR len") }
+      if hi { return Err("PNG: dup IHDR") }
+      w = match read_u32_be(cdat, 0) { Ok(v) => v; Err(e) => return Err(e) }
+      h = match read_u32_be(cdat, 4) { Ok(v) => v; Err(e) => return Err(e) }
+      bd = cdat[8].to_int()
+      ct = cdat[9].to_int()
+      il = cdat[12].to_int()
+      // Validate compression and filter method
+      if cdat[10].to_int() != 0 { return Err("PNG: bad comp") }
+      if cdat[11].to_int() != 0 { return Err("PNG: bad filt") }
+      if il != 0 { return Err("PNG: interlace not yet supported") }
+      hi = true
+    } else if id {
+      // IDAT: image data
+      if !hi { return Err("PNG: IDAT before IHDR") }
+      cd.write_bytes(cdat)
+    } else if ie {
+      // IEND: image end
+      break
+    }
+  }
+
+  if !hi { return Err("PNG: no IHDR") }
+  if w <= 0 || h <= 0 { return Err("PNG: bad dims") }
+
+  // Validate color type + bit depth combination
+  let vok = match ct {
+    PC_GRAY => bd == 8
+    PC_RGB => bd == 8
+    PC_GA => bd == 8
+    PC_RGBA => bd == 8
+    _ => false
+  }
+  if !vok { return Err("PNG: bad color/depth") }
+
+  // zlib decompress all IDAT data
+  let dec = match zlib_decompress(cd.to_bytes()) { Ok(v) => v; Err(e) => return Err(e) }
+
+  // Decode non-interlaced image
+  decode_plain(w, h, bd, ct, dec)
+}
+
+/// Decode a non-interlaced (il=0) PNG image from decompressed filtered data
+fn decode_plain(
+  w : Int, h : Int, bd : Int, ct : Int, dec : Bytes
+) -> Result[Image, String] {
+  let sp = png_spp(ct)
+  let bpp = sp * bd / 8    // bytes per pixel
+  let pitch = w * bpp       // bytes per output row
+  let ssl = w * bpp + 1     // source row stride (filter byte + row data)
+
+  let arr = Array::make(w * h * bpp, b'\x00')
+  let prev = Array::make(pitch, b'\x00')
+
+  for y = 0; y < h; y = y + 1 {
+    let rs = y * ssl
+    if rs + ssl > dec.length() { return Err("PNG: short row") }
+    let ft = dec[rs].to_int()
+    let rd = dec[rs + 1:rs + ssl]
+
+    match apply_filter(ft, rd, prev, y, bpp, arr, pitch) {
+      Ok(_) => ()
+      Err(e) => return Err(e)
+    }
+
+    // Save current row as previous for next iteration
+    let ro = y * pitch
+    for x = 0; x < pitch && ro + x < arr.length(); x = x + 1 {
+      prev[x] = arr[ro + x]
+    }
+  }
+
+  Ok(Image::new(w, h, out_fmt(ct), Bytes::from_array(arr)))
+}
