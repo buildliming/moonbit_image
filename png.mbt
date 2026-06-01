@@ -352,3 +352,127 @@ fn read_dyn_header(r : BitReader) -> Result[(BitReader, HDecoder, HDecoder), Str
 
   Ok((xr, build_huffman(lla, nl), build_huffman(dla, nd)))
 }
+
+//-----------------------------------------------------------------------------
+// zlib decompression wrapper (RFC 1950)
+//-----------------------------------------------------------------------------
+
+/// Decompress zlib-wrapped DEFLATE data
+/// zlib format: 2-byte header (CMF+FLG) + DEFLATE stream + 4-byte Adler32
+fn zlib_decompress(data : Bytes) -> Result[Bytes, String] {
+  if data.length() < 6 {
+    return Err("zlib: data too short")
+  }
+
+  // CMF (Compression Method and Flags)
+  let cmf = data[0].to_int()
+  let cm = cmf & 0x0F       // Compression method
+  let cinfo = cmf >> 4        // Compression info (window size)
+
+  // FLG (Flags)
+  let flg = data[1].to_int()
+  let fcheck = ((cmf * 256) + flg) % 31
+
+  // Verify header checksum
+  if fcheck != 0 {
+    return Err("zlib: header checksum mismatch")
+  }
+
+  // Only DEFLATE (CM=8) is supported
+  if cm != 8 {
+    return Err("zlib: unsupported compression method: \(cm)")
+  }
+
+  // Check for preset dictionary (FDICT flag)
+  let fdict = (flg >> 5) & 1
+  if fdict == 1 {
+    return Err("zlib: preset dictionary not supported")
+  }
+
+  // Extract DEFLATE stream (skip 2-byte header, skip 4-byte Adler32 trailer)
+  let deflate_data = data[2:data.length() - 4]
+
+  // Decompress
+  let result = deflate_decompress(deflate_data)?
+
+  // Verify Adler32 (last 4 bytes of zlib stream, big-endian)
+  let expected_adler = (data[data.length() - 4].to_int() << 24) |
+                       (data[data.length() - 3].to_int() << 16) |
+                       (data[data.length() - 2].to_int() << 8) |
+                       data[data.length() - 1].to_int()
+  let actual_adler = adler32(result)
+  if actual_adler != expected_adler {
+    return Err("zlib: Adler32 checksum mismatch")
+  }
+
+  Ok(result)
+}
+
+//-----------------------------------------------------------------------------
+// PNG filter reversal
+//-----------------------------------------------------------------------------
+
+// PNG filter types
+let F_NONE  : Int = 0
+let F_SUB   : Int = 1
+let F_UP    : Int = 2
+let F_AVG   : Int = 3
+let F_PAETH : Int = 4
+
+/// Absolute value
+fn abs_i(x : Int) -> Int { if x < 0 { -x } else { x } }
+
+/// Paeth predictor: selects the neighbor (a=left, b=up, c=upper-left)
+/// closest to a+b-c, used by PNG filter type 4
+fn paeth(a : Int, b : Int, c : Int) -> Int {
+  let p = a + b - c
+  let pa = abs_i(p - a)
+  let pb = abs_i(p - b)
+  let pc = abs_i(p - c)
+  if pa <= pb && pa <= pc { a } else if pb <= pc { b } else { c }
+}
+
+/// Apply PNG filter reversal to a single row of pixel data
+/// `ft` = filter type, `rd` = filtered row data, `prev` = previous unfiltered row
+/// `row` = current row index, `bpp` = bytes per pixel, `arr` = output buffer
+fn apply_filter(
+  ft : Int, rd : Bytes, prev : Array[Byte],
+  row : Int, bpp : Int, arr : Array[Byte], pitch : Int
+) -> Result[Unit, String] {
+  let ro = row * pitch
+  let sl = rd.length()
+
+  // Filter None: data is already unfiltered
+  if ft == F_NONE {
+    for i = 0; i < sl; i = i + 1 { arr[ro + i] = rd[i] }
+    return Ok(())
+  }
+
+  // Filter Sub: add left neighbor (already decoded in current row)
+  if ft == F_SUB {
+    let cf = if bpp < sl { bpp } else { sl }
+    for i = 0; i < cf; i = i + 1 { arr[ro + i] = rd[i] }
+    for i = bpp; i < sl; i = i + 1 {
+      arr[ro + i] = ((rd[i].to_int() + arr[ro + i - bpp].to_int()) & 0xFF).to_byte()
+    }
+    return Ok(())
+  }
+
+  // Per-pixel filters (Up, Average, Paeth)
+  for i = 0; i < sl; i = i + 1 {
+    let raw = rd[i].to_int()
+    let left = if i >= bpp { arr[ro + i - bpp].to_int() } else { 0 }
+    let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
+    let flt = match ft {
+      F_UP => (raw + upv) & 0xFF
+      F_AVG => (raw + ((left + upv) / 2)) & 0xFF
+      F_PAETH => {
+        let ul = if row > 0 && i >= bpp && i < prev.length() { prev[i - bpp].to_int() } else { 0 }
+        (raw + paeth(left, upv, ul)) & 0xFF
+      }
+      _ => return Err("PNG: bad filter")
+    }
+    arr[ro + i] = flt.to_byte()
+  }
+  Ok(())
+}
