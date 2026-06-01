@@ -1,0 +1,16 @@
+{
+  "name": "lws/image",
+  "version": "0.1.0",
+  "deps": {},
+  "readme": "README.md",
+  "repository": "https://github.com/buildliming/moonbit_image",
+  "description": "A pure MoonBit image decoding library supporting BMP, QOI, TGA, and PNG formats.",
+  "keywords": ["image", "decoder", "png", "bmp", "qoi", "tga", "graphics"],
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "lws",
+      "email": ""
+    }
+  ]
+}

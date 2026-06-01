@@ -1,0 +1,16 @@
+# MoonBit build output
+/target/
+/_build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Generated test artifacts
+test_images/
