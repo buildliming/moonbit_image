@@ -753,6 +753,7 @@ fn decode_a7(
 }
 
 /// Convert indexed pixel data to RGBA using a palette
+/// Pre-computes palette as RGBA byte quads to avoid per-pixel to_byte() calls
 fn idx2rgba(
   data : Bytes, w : Int, h : Int, bd : Int, pal : Array[Color]
 ) -> Result[Bytes, String] {
@@ -760,39 +761,47 @@ fn idx2rgba(
   let n = w * h
   let arr = Array::make(n * 4, b'\x00')
 
+  // Pre-compute palette as RGBA byte quads (eliminates per-pixel to_byte + struct field access)
+  let pal_bytes = Array::make(nc, [b'\x00', b'\x00', b'\x00', b'\xFF'])
+  for i = 0; i < nc; i = i + 1 {
+    let c = pal[i]
+    pal_bytes[i] = [c.r.to_byte(), c.g.to_byte(), c.b.to_byte(), c.a.to_byte()]
+  }
+  let default_bytes = [b'\x00', b'\x00', b'\x00', b'\xFF']
+
   if bd == 8 {
     for i = 0; i < n; i = i + 1 {
       let idx = data[i].to_int()
-      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
       let d = i * 4
-      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
-      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+      arr[d] = c[0]; arr[d + 1] = c[1]
+      arr[d + 2] = c[2]; arr[d + 3] = c[3]
     }
   } else if bd == 4 {
     for i = 0; i < n; i = i + 1 {
       let bv = data[i / 2].to_int()
       let idx = if i % 2 == 0 { (bv >> 4) & 0xF } else { bv & 0xF }
-      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
       let d = i * 4
-      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
-      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+      arr[d] = c[0]; arr[d + 1] = c[1]
+      arr[d + 2] = c[2]; arr[d + 3] = c[3]
     }
   } else if bd == 2 {
     for i = 0; i < n; i = i + 1 {
       let bv = data[i / 4].to_int()
       let idx = (bv >> (6 - (i % 4) * 2)) & 0x3
-      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
       let d = i * 4
-      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
-      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+      arr[d] = c[0]; arr[d + 1] = c[1]
+      arr[d + 2] = c[2]; arr[d + 3] = c[3]
     }
   } else if bd == 1 {
     for i = 0; i < n; i = i + 1 {
       let idx = (data[i / 8].to_int() >> (7 - i % 8)) & 1
-      let c = if idx < nc { pal[idx] } else { Color::default() }
+      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
       let d = i * 4
-      arr[d] = c.r.to_byte(); arr[d + 1] = c.g.to_byte()
-      arr[d + 2] = c.b.to_byte(); arr[d + 3] = c.a.to_byte()
+      arr[d] = c[0]; arr[d + 1] = c[1]
+      arr[d + 2] = c[2]; arr[d + 3] = c[3]
     }
   } else {
     return Err("PNG: bad idx depth")

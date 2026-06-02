@@ -137,6 +137,10 @@ fn write_palette_pixel(
 /// Decode 32-bit BGRA
 fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Result[Image, String]! {
   let stride = bmp_row_stride(self.width, 32)
+  // Upfront bounds validation: total pixel data region must fit
+  if self.data.length() < self.data_offset + self.height * stride {
+    return Err("BMP: unexpected end of pixel data")
+  }
   let out_size = self.width * self.height * 4
   let _buf = Buffer::new(out_size)
 
@@ -145,9 +149,6 @@ fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Result[Image, String]! {
     let row_offset = self.data_offset + src_row * stride
     for col = 0; col < self.width; col = col + 1 {
       let src = row_offset + col * 4
-      if src + 3 >= self.data.length() {
-        return Err("BMP: unexpected end of pixel data")
-      }
       let dst = (row * self.width + col) * 4
       // BMP stores BGRA in little-endian: byte order is B, G, R, A
       _buf[dst] = self.data[src + 2]      // R
@@ -162,6 +163,10 @@ fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Result[Image, String]! {
 /// Decode 24-bit BGR
 fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Result[Image, String]! {
   let stride = bmp_row_stride(self.width, 24)
+  // Upfront bounds validation: total pixel data region must fit
+  if self.data.length() < self.data_offset + self.height * stride {
+    return Err("BMP: unexpected end of pixel data")
+  }
   let out_size = self.width * self.height * 3
   let _buf = Buffer::new(out_size)
 
@@ -170,9 +175,6 @@ fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Result[Image, String]! {
     let row_offset = self.data_offset + src_row * stride
     for col = 0; col < self.width; col = col + 1 {
       let src = row_offset + col * 3
-      if src + 2 >= self.data.length() {
-        return Err("BMP: unexpected end of pixel data")
-      }
       let dst = (row * self.width + col) * 3
       // BMP stores BGR
       _buf[dst] = self.data[src + 2]      // R
@@ -188,6 +190,10 @@ fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Result[Image, String]! {
   let palette = self.read_palette(256)
   let palette_rgba = palette_to_rgba_bytes(palette)
   let stride = bmp_row_stride(self.width, 8)
+  // Upfront bounds validation
+  if self.data.length() < self.data_offset + self.height * stride {
+    return Err("BMP: unexpected end of pixel data")
+  }
   let out_size = self.width * self.height * 4
   let _buf = Buffer::new(out_size)
 
@@ -196,9 +202,6 @@ fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Result[Image, String]! {
     let row_offset = self.data_offset + src_row * stride
     for col = 0; col < self.width; col = col + 1 {
       let src = row_offset + col
-      if src >= self.data.length() {
-        return Err("BMP: unexpected end of pixel data")
-      }
       let idx = self.data[src].to_int()
       let dst = (row * self.width + col) * 4
       write_palette_pixel(_buf, dst, idx, 256, palette_rgba)
@@ -212,6 +215,10 @@ fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Result[Image, String]! {
   let palette = self.read_palette(16)
   let palette_rgba = palette_to_rgba_bytes(palette)
   let stride = bmp_row_stride(self.width, 4)
+  // Upfront bounds validation
+  if self.data.length() < self.data_offset + self.height * stride {
+    return Err("BMP: unexpected end of pixel data")
+  }
   let out_size = self.width * self.height * 4
   let _buf = Buffer::new(out_size)
 
@@ -220,9 +227,6 @@ fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Result[Image, String]! {
     let row_offset = self.data_offset + src_row * stride
     for col = 0; col < self.width; col = col + 1 {
       let src = row_offset + col / 2
-      if src >= self.data.length() {
-        return Err("BMP: unexpected end of pixel data")
-      }
       let byte_val = self.data[src].to_int()
       // High nibble first (leftmost pixel)
       let idx = if col % 2 == 0 { (byte_val >> 4) & 0xF } else { byte_val & 0xF }
@@ -238,6 +242,10 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Result[Image, String]! {
   let palette = self.read_palette(2)
   let palette_rgba = palette_to_rgba_bytes(palette)
   let stride = bmp_row_stride(self.width, 1)
+  // Upfront bounds validation
+  if self.data.length() < self.data_offset + self.height * stride {
+    return Err("BMP: unexpected end of pixel data")
+  }
   let out_size = self.width * self.height * 4
   let _buf = Buffer::new(out_size)
 
@@ -246,9 +254,6 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Result[Image, String]! {
     let row_offset = self.data_offset + src_row * stride
     for col = 0; col < self.width; col = col + 1 {
       let src = row_offset + col / 8
-      if src >= self.data.length() {
-        return Err("BMP: unexpected end of pixel data")
-      }
       let byte_val = self.data[src].to_int()
       // MSB first (leftmost pixel is bit 7)
       let bit = (byte_val >> (7 - col % 8)) & 1
@@ -264,6 +269,7 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Result[Image, String]! {
 //-----------------------------------------------------------------------------
 
 /// Decode RLE8 compressed 8-bit BMP
+/// Uses valid_row flag updated on row transitions to avoid per-pixel bounds checks
 fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Result[Image, String]! {
   let palette = self.read_palette(256)
   let palette_rgba = palette_to_rgba_bytes(palette)
@@ -274,6 +280,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Result[Image, String]! {
   let mut row = if self.top_down { 0 } else { self.height - 1 }
   let mut col = 0
   let row_step = if self.top_down { 1 } else { -1 }
+  let mut valid_row = true  // Initial row is always valid (height > 0 already validated)
 
   loop {
     if pos + 1 >= self.data.length() {
@@ -287,6 +294,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Result[Image, String]! {
       if value == 0 {
         // End of line
         row = row + row_step
+        valid_row = row >= 0 && row < self.height
         col = 0
       } else if value == 1 {
         // End of bitmap
@@ -301,6 +309,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Result[Image, String]! {
         pos = pos + 2
         col = col + dx
         row = row + row_step * dy
+        valid_row = row >= 0 && row < self.height
       } else {
         // Absolute run: next `value` bytes are literal indices
         let run_len = value
@@ -308,7 +317,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Result[Image, String]! {
           return Err("BMP RLE8: truncated absolute run")
         }
         for i = 0; i < run_len; i = i + 1 {
-          if row >= 0 && row < self.height {
+          if valid_row {
             let idx = self.data[pos].to_int()
             let dst = (row * self.width + col) * 4
             write_palette_pixel(_buf, dst, idx, 256, palette_rgba)
@@ -324,7 +333,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Result[Image, String]! {
     } else {
       // Encoded run: repeat `value` for `count` pixels
       for _i = 0; _i < count; _i = _i + 1 {
-        if row >= 0 && row < self.height {
+        if valid_row {
           let dst = (row * self.width + col) * 4
           write_palette_pixel(_buf, dst, value, 256, palette_rgba)
         }
@@ -341,6 +350,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Result[Image, String]! {
 //-----------------------------------------------------------------------------
 
 /// Decode RLE4 compressed 4-bit BMP
+/// Uses valid_row flag updated on row transitions to avoid per-pixel bounds checks
 fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Result[Image, String]! {
   let palette = self.read_palette(16)
   let palette_rgba = palette_to_rgba_bytes(palette)
@@ -351,6 +361,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Result[Image, String]! {
   let mut row = if self.top_down { 0 } else { self.height - 1 }
   let mut col = 0
   let row_step = if self.top_down { 1 } else { -1 }
+  let mut valid_row = true  // Initial row is always valid (height > 0 already validated)
 
   loop {
     if pos + 1 >= self.data.length() {
@@ -364,6 +375,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Result[Image, String]! {
       if value == 0 {
         // End of line
         row = row + row_step
+        valid_row = row >= 0 && row < self.height
         col = 0
       } else if value == 1 {
         // End of bitmap
@@ -378,6 +390,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Result[Image, String]! {
         pos = pos + 2
         col = col + dx
         row = row + row_step * dy
+        valid_row = row >= 0 && row < self.height
       } else {
         // Absolute run
         let num_pixels = value
@@ -391,7 +404,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Result[Image, String]! {
           pos = pos + 1
           // High nibble first
           let idx_hi = (byte_val >> 4) & 0x0F
-          if pixels_read < num_pixels && row >= 0 && row < self.height {
+          if pixels_read < num_pixels && valid_row {
             let dst = (row * self.width + col) * 4
             write_palette_pixel(_buf, dst, idx_hi, 16, palette_rgba)
           }
@@ -399,7 +412,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Result[Image, String]! {
           pixels_read = pixels_read + 1
           // Low nibble second
           let idx_lo = byte_val & 0x0F
-          if pixels_read < num_pixels && row >= 0 && row < self.height {
+          if pixels_read < num_pixels && valid_row {
             let dst = (row * self.width + col) * 4
             write_palette_pixel(_buf, dst, idx_lo, 16, palette_rgba)
           }
@@ -417,7 +430,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Result[Image, String]! {
       let lo_nib = value & 0x0F
       for i = 0; i < count; i = i + 1 {
         let idx = if i % 2 == 0 { hi_nib } else { lo_nib }
-        if row >= 0 && row < self.height {
+        if valid_row {
           let dst = (row * self.width + col) * 4
           write_palette_pixel(_buf, dst, idx, 16, palette_rgba)
         }

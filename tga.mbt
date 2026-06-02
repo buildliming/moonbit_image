@@ -120,6 +120,10 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
 
   // Row stride (TGA rows are tightly packed, no padding)
   let src_stride = self.width * src_bpp
+  // Upfront bounds validation: total pixel data region must fit
+  if self.data.length() < self.data_offset + self.height * src_stride {
+    return Err("TGA: unexpected end of pixel data")
+  }
 
   for dst_y = 0; dst_y < self.height; dst_y = dst_y + 1 {
     let src_y = self.src_row(dst_y)
@@ -127,9 +131,6 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
 
     for x = 0; x < self.width; x = x + 1 {
       let src_pixel_offset = src_row_offset + x * src_bpp
-      if src_pixel_offset + src_bpp > self.data.length() {
-        return Err("TGA: unexpected end of pixel data")
-      }
 
       let dst_pixel_offset = (dst_y * self.width + x) * out_bpp
 
@@ -243,6 +244,8 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
 }
 
 /// Write a single pixel from TGA source data to output buffer
+/// Callers (decode_rle / decode_uncompressed) validate bounds at packet/row level,
+/// so per-pixel bounds check is redundant and omitted here
 fn write_tga_pixel(
   _buf : Buffer,
   dst_offset : Int,
@@ -251,9 +254,6 @@ fn write_tga_pixel(
   pixel_depth : Int,
   out_bpp : Int
 ) -> Result[Unit, String]! {
-  if src_offset + (pixel_depth / 8) > src.length() {
-    return Err("TGA: pixel read out of bounds")
-  }
   if pixel_depth == 8 {
     _buf[dst_offset] = src[src_offset]
   } else if pixel_depth == 16 {
