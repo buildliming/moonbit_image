@@ -115,11 +115,15 @@ let clord : Array[Int] = [
 //-----------------------------------------------------------------------------
 
 /// Ensure at least `need` bits are available in the buffer
-fn ensure_bits(r : BitReader, buf : Int, cnt : Int, need : Int) -> Result[(BitReader, Int, Int), String] {
+/// Uses batch read_bits (up to 16 at a time) instead of per-bit read_bit
+/// to eliminate per-bit bounds checks and bit position arithmetic
+fn ensure_bits(r : BitReader, buf : Int, cnt : Int, need : Int) -> Result[(BitReader, Int, Int), String]! {
   let mut xr = r; let mut xb = buf; let mut xc = cnt
   while xc < need {
-    match xr.read_bit() {
-      Ok((r2, bit)) => { xr = r2; xb = (xb << 1) | bit; xc = xc + 1 }
+    // Read up to 16 bits at once (read_bits has optimized batch-byte reading)
+    let to_read = if need - xc > 16 { 16 } else { need - xc }
+    match xr.read_bits(to_read) {
+      Ok((r2, val)) => { xr = r2; xb = (xb << to_read) | val; xc = xc + to_read }
       Err(e) => return Err(e)
     }
   }
@@ -458,23 +462,40 @@ fn apply_filter(
     return Ok(())
   }
 
-  // Per-pixel filters (Up, Average, Paeth)
-  for i = 0; i < sl; i = i + 1 {
-    let raw = rd[i].to_int()
-    let left = if i >= bpp { arr[ro + i - bpp].to_int() } else { 0 }
-    let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
-    let flt = match ft {
-      F_UP => (raw + upv) & 0xFF
-      F_AVG => (raw + ((left + upv) / 2)) & 0xFF
-      F_PAETH => {
-        let ul = if row > 0 && i >= bpp && i < prev.length() { prev[i - bpp].to_int() } else { 0 }
-        (raw + paeth(left, upv, ul)) & 0xFF
-      }
-      _ => return Err("PNG: bad filter")
+  // Filter Up: add pixel from previous row (no left neighbor needed)
+  if ft == F_UP {
+    for i = 0; i < sl; i = i + 1 {
+      let raw = rd[i].to_int()
+      let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
+      arr[ro + i] = ((raw + upv) & 0xFF).to_byte()
     }
-    arr[ro + i] = flt.to_byte()
+    return Ok(())
   }
-  Ok(())
+
+  // Filter Average: average of left and up neighbors (no upper-left needed)
+  if ft == F_AVG {
+    for i = 0; i < sl; i = i + 1 {
+      let raw = rd[i].to_int()
+      let left = if i >= bpp { arr[ro + i - bpp].to_int() } else { 0 }
+      let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
+      arr[ro + i] = ((raw + ((left + upv) / 2)) & 0xFF).to_byte()
+    }
+    return Ok(())
+  }
+
+  // Filter Paeth: Paeth predictor (needs left, up, and upper-left)
+  if ft == F_PAETH {
+    for i = 0; i < sl; i = i + 1 {
+      let raw = rd[i].to_int()
+      let left = if i >= bpp { arr[ro + i - bpp].to_int() } else { 0 }
+      let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
+      let ul = if row > 0 && i >= bpp && i < prev.length() { prev[i - bpp].to_int() } else { 0 }
+      arr[ro + i] = ((raw + paeth(left, upv, ul)) & 0xFF).to_byte()
+    }
+    return Ok(())
+  }
+
+  Err("PNG: bad filter")
 }
 
 //-----------------------------------------------------------------------------

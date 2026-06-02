@@ -171,6 +171,7 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
 
 /// Decode RLE-compressed TGA data
 /// RLE packets are read sequentially (not row-by-row), then scattered by row flipping
+/// Uses incremental (x,y) tracking instead of per-pixel division/modulo
 fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
   let src_bpp = self.src_bpp()
   let out_bpp = if self.pixel_depth <= 8 { 1 } else { 4 }
@@ -178,10 +179,12 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
   let _buf = Buffer::new(out_size)
 
   let total_pixels = self.width * self.height
-  let mut pixel_idx = 0
+  let mut pixels_done = 0
   let mut pos = self.data_offset
+  let mut cur_x = 0  // file-order column (0..width-1)
+  let mut cur_y = 0  // file-order row (0..height-1)
 
-  while pixel_idx < total_pixels {
+  while pixels_done < total_pixels {
     if pos >= self.data.length() {
       return Err("TGA: unexpected end of RLE data")
     }
@@ -190,7 +193,7 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
     let packet_type = (packet_header >> 7) & 1  // 1 = RLE, 0 = raw
     let count = (packet_header & 0x7F) + 1       // 1..128 pixels
 
-    if count > total_pixels - pixel_idx {
+    if count > total_pixels - pixels_done {
       return Err("TGA: RLE packet exceeds image pixel count")
     }
 
@@ -201,14 +204,16 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
       }
       let pixel_data = self.data[pos:pos + src_bpp]
       for _i = 0; _i < count; _i = _i + 1 {
-        // Compute output position from pixel index (sequential in file order)
-        let file_y = pixel_idx / self.width
-        let file_x = pixel_idx % self.width
         // Map file row to output row (file may be bottom-to-top)
-        let dst_y = self.src_row(file_y)
-        let dst_pixel_offset = (dst_y * self.width + file_x) * out_bpp
+        let dst_y = self.src_row(cur_y)
+        let dst_pixel_offset = (dst_y * self.width + cur_x) * out_bpp
         write_tga_pixel(_buf, dst_pixel_offset, pixel_data, 0, self.pixel_depth, out_bpp)?
-        pixel_idx = pixel_idx + 1
+        // Advance file-order position: increment x, wrap to next row
+        cur_x = cur_x + 1
+        if cur_x >= self.width {
+          cur_x = 0
+          cur_y = cur_y + 1
+        }
       }
       pos = pos + src_bpp
     } else {
@@ -217,16 +222,20 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
         if pos + src_bpp > self.data.length() {
           return Err("TGA: truncated raw pixel data")
         }
-        let file_y = pixel_idx / self.width
-        let file_x = pixel_idx % self.width
         // Map file row to output row
-        let dst_y = self.src_row(file_y)
-        let dst_pixel_offset = (dst_y * self.width + file_x) * out_bpp
+        let dst_y = self.src_row(cur_y)
+        let dst_pixel_offset = (dst_y * self.width + cur_x) * out_bpp
         write_tga_pixel(_buf, dst_pixel_offset, self.data, pos, self.pixel_depth, out_bpp)?
         pos = pos + src_bpp
-        pixel_idx = pixel_idx + 1
+        // Advance file-order position: increment x, wrap to next row
+        cur_x = cur_x + 1
+        if cur_x >= self.width {
+          cur_x = 0
+          cur_y = cur_y + 1
+        }
       }
     }
+    pixels_done = pixels_done + count
   }
 
   let format = if out_bpp == 1 { PixelFormat::Gray8 } else { PixelFormat::RGBA8 }
