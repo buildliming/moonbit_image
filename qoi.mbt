@@ -5,16 +5,16 @@
 // Specification: https://qoiformat.org/
 
 // QOI chunk types (identified by high bits of first byte)
-let QOI_OP_RGB   : Int = 0xFE  // 11111110
-let QOI_OP_RGBA  : Int = 0xFF  // 11111111
-let QOI_OP_INDEX : Int = 0x00  // 00xxxxxx
-let QOI_OP_DIFF  : Int = 0x40  // 01xxxxxx
-let QOI_OP_LUMA  : Int = 0x80  // 10xxxxxx
-let QOI_OP_RUN   : Int = 0xC0  // 11xxxxxx
+const QOI_OP_RGB   : Int = 0xFE  // 11111110
+const QOI_OP_RGBA  : Int = 0xFF  // 11111111
+const QOI_OP_INDEX : Int = 0x00  // 00xxxxxx
+const QOI_OP_DIFF  : Int = 0x40  // 01xxxxxx
+const QOI_OP_LUMA  : Int = 0x80  // 10xxxxxx
+const QOI_OP_RUN   : Int = 0xC0  // 11xxxxxx
 
 /// Decode a QOI image from raw bytes
-pub fn decode_qoi(data : Bytes) -> Result[Image, String]! {
-  let decoder = QoiDecoder::new(data)?
+pub fn decode_qoi(data : Bytes) -> Image raise Failure {
+  let decoder = QoiDecoder::new(data)
   decoder.decode()
 }
 
@@ -28,40 +28,40 @@ struct QoiDecoder {
   colorspace : Int  // 0 = sRGB with linear alpha, 1 = all linear
 }
 
-fn QoiDecoder::new(data : Bytes) -> Result[QoiDecoder, String]! {
+fn QoiDecoder::new(data : Bytes) -> QoiDecoder raise Failure {
   // Check minimum size: header (14) + end marker (8)
   if data.length() < 22 {
-    return Err("QOI: file too small")
+    raise Failure::Failure("QOI: file too small")
   }
   // Verify magic bytes: "qoif"
-  if data[0] != 'q' || data[1] != 'o' || data[2] != 'i' || data[3] != 'f' {
-    return Err("QOI: invalid magic bytes, expected 'qoif'")
+  if data[0] != b'q' || data[1] != b'o' || data[2] != b'i' || data[3] != b'f' {
+    raise Failure::Failure("QOI: invalid magic bytes, expected 'qoif'")
   }
-  let width = read_u32_be(data, 4)?
-  let height = read_u32_be(data, 8)?
+  let width = read_u32_be(data, 4)
+  let height = read_u32_be(data, 8)
   let channels = data[12].to_int()
   let colorspace = data[13].to_int()
 
   if width <= 0 || height <= 0 {
-    return Err("QOI: invalid dimensions")
+    raise Failure::Failure("QOI: invalid dimensions")
   }
   if channels != 3 && channels != 4 {
-    return Err("QOI: unsupported channel count: \(channels)")
+    raise Failure::Failure("QOI: unsupported channel count: \{channels}")
   }
   if colorspace != 0 && colorspace != 1 {
-    return Err("QOI: invalid colorspace value")
+    raise Failure::Failure("QOI: invalid colorspace value")
   }
 
-  Ok({
+  {
     data: data, pos: 14, width: width, height: height,
     channels: channels, colorspace: colorspace
-  })
+  }
 }
 
-fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
+fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
   let pixel_count = self.width * self.height
   let out_size = pixel_count * 4  // Always output RGBA8
-  let _pixels = Buffer::new(out_size)
+  let _pixels = Array::make(out_size, Byte::default())
   let mut pixel_idx = 0
 
   // Color state
@@ -81,7 +81,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
 
   while pixel_idx < pixel_count {
     if pos >= self.data.length() {
-      return Err("QOI: unexpected end of chunk data")
+      raise Failure::Failure("QOI: unexpected end of chunk data")
     }
     let byte_val = self.data[pos].to_int()
     pos = pos + 1
@@ -90,7 +90,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
     if byte_val == QOI_OP_RGB {
       // 8-bit RGB chunk: R, G, B follow
       if pos + 2 >= self.data.length() {
-        return Err("QOI: truncated RGB chunk")
+        raise Failure::Failure("QOI: truncated RGB chunk")
       }
       r = self.data[pos].to_int()
       g = self.data[pos + 1].to_int()
@@ -99,7 +99,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
     } else if byte_val == QOI_OP_RGBA {
       // 8-bit RGBA chunk: R, G, B, A follow
       if pos + 3 >= self.data.length() {
-        return Err("QOI: truncated RGBA chunk")
+        raise Failure::Failure("QOI: truncated RGBA chunk")
       }
       r = self.data[pos].to_int()
       g = self.data[pos + 1].to_int()
@@ -124,7 +124,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
     } else if (byte_val & 0xC0) == QOI_OP_LUMA {
       // Luma chunk: green diff + luma-adjusted red/blue diff
       if pos >= self.data.length() {
-        return Err("QOI: truncated LUMA chunk")
+        raise Failure::Failure("QOI: truncated LUMA chunk")
       }
       let byte2 = self.data[pos].to_int()
       pos = pos + 1
@@ -140,7 +140,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
       // QOI_OP_RUN chunk: repeat previous pixel
       let run = (byte_val & 0x3F) + 1
       if run < 1 || run > 62 {
-        return Err("QOI: invalid run length: \(run)")
+        raise Failure::Failure("QOI: invalid run length: \{run}")
       }
       for _i = 0; _i < run; _i = _i + 1 {
         if pixel_idx >= pixel_count {
@@ -178,7 +178,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
     seen_a[hash] = a
   }
 
-  Ok(Image::new(self.width, self.height, PixelFormat::RGBA8, _pixels.to_bytes()))
+  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_pixels))
 }
 
 /// QOI color hash function: (r*3 + g*5 + b*7 + a*11) % 64

@@ -11,8 +11,8 @@
 //   - Top-left and bottom-left image origin
 
 /// Decode a TGA image from raw bytes
-pub fn decode_tga(data : Bytes) -> Result[Image, String]! {
-  let decoder = TgaDecoder::new(data)?
+pub fn decode_tga(data : Bytes) -> Image raise Failure {
+  let decoder = TgaDecoder::new(data)
   decoder.decode()
 }
 
@@ -29,22 +29,22 @@ struct TgaDecoder {
   rle : Bool
 }
 
-fn TgaDecoder::new(data : Bytes) -> Result[TgaDecoder, String]! {
+fn TgaDecoder::new(data : Bytes) -> TgaDecoder raise Failure {
   if data.length() < 18 {
-    return Err("TGA: file too small for header")
+    raise Failure::Failure("TGA: file too small for header")
   }
   let id_length = data[0].to_int()
   let color_map_type = data[1].to_int()
   let image_type = data[2].to_int()
 
   // Read image specification
-  let width = read_u16_le(data, 12)?
-  let height = read_u16_le(data, 14)?
+  let width = read_u16_le(data, 12)
+  let height = read_u16_le(data, 14)
   let pixel_depth = data[16].to_int()
   let image_descriptor = data[17].to_int()
 
   if width <= 0 || height <= 0 {
-    return Err("TGA: invalid dimensions")
+    raise Failure::Failure("TGA: invalid dimensions")
   }
 
   // Supported image types
@@ -53,34 +53,34 @@ fn TgaDecoder::new(data : Bytes) -> Result[TgaDecoder, String]! {
     3 => false   // Uncompressed grayscale
     10 => true   // RLE true-color
     11 => true   // RLE grayscale
-    _ => return Err("TGA: unsupported image type: \(image_type)")
+    _ => raise Failure::Failure("TGA: unsupported image type: \{image_type}")
   }
 
   // Supported pixel depths
   if pixel_depth != 8 && pixel_depth != 16 && pixel_depth != 24 && pixel_depth != 32 {
-    return Err("TGA: unsupported pixel depth: \(pixel_depth)")
+    raise Failure::Failure("TGA: unsupported pixel depth: \{pixel_depth}")
   }
 
   // Calculate data offset: header (18) + ID field + color map
   let id_offset = 18 + id_length
   let mut _color_map_size = 0
   if color_map_type == 1 {
-    let cm_first = read_u16_le(data, 3)?
-    let cm_length = read_u16_le(data, 5)?
+    let cm_first = read_u16_le(data, 3)
+    let cm_length = read_u16_le(data, 5)
     let cm_entry_size = data[7].to_int()
     _color_map_size = cm_length * ((cm_entry_size + 7) / 8)
   }
   let data_offset = id_offset + _color_map_size
 
-  Ok({
+  {
     data: data, id_length: id_length, image_type: image_type,
     width: width, height: height, pixel_depth: pixel_depth,
     image_descriptor: image_descriptor, data_offset: data_offset,
     rle: rle
-  })
+  }
 }
 
-fn TgaDecoder::decode(self : TgaDecoder) -> Result[Image, String]! {
+fn TgaDecoder::decode(self : TgaDecoder) -> Image raise Failure {
   if self.rle {
     self.decode_rle()
   } else {
@@ -112,17 +112,17 @@ fn TgaDecoder::src_row(self : TgaDecoder, dst_row : Int) -> Int {
 }
 
 /// Decode uncompressed TGA data
-fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! {
+fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Image raise Failure {
   let src_bpp = self.src_bpp()
   let out_bpp = if self.pixel_depth <= 8 { 1 } else { 4 }
   let out_size = self.width * self.height * out_bpp
-  let _buf = Buffer::new(out_size)
+  let _buf = Array::make(out_size, Byte::default())
 
   // Row stride (TGA rows are tightly packed, no padding)
   let src_stride = self.width * src_bpp
   // Upfront bounds validation: total pixel data region must fit
   if self.data.length() < self.data_offset + self.height * src_stride {
-    return Err("TGA: unexpected end of pixel data")
+    raise Failure::Failure("TGA: unexpected end of pixel data")
   }
 
   for dst_y = 0; dst_y < self.height; dst_y = dst_y + 1 {
@@ -155,7 +155,7 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
         _buf[dst_pixel_offset] = self.data[src_pixel_offset + 2]      // R
         _buf[dst_pixel_offset + 1] = self.data[src_pixel_offset + 1]  // G
         _buf[dst_pixel_offset + 2] = self.data[src_pixel_offset]      // B
-        _buf[dst_pixel_offset + 3] = '\xFF'                           // A
+        _buf[dst_pixel_offset + 3] = b'\xFF'                          // A
       } else {
         // 32-bit BGRA → RGBA
         _buf[dst_pixel_offset] = self.data[src_pixel_offset + 2]      // R
@@ -167,17 +167,17 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Result[Image, String]! 
   }
 
   let format = if out_bpp == 1 { PixelFormat::Gray8 } else { PixelFormat::RGBA8 }
-  Ok(Image::new(self.width, self.height, format, _buf.to_bytes()))
+  Image::new(self.width, self.height, format, Bytes::from_array(_buf))
 }
 
 /// Decode RLE-compressed TGA data
 /// RLE packets are read sequentially (not row-by-row), then scattered by row flipping
 /// Uses incremental (x,y) tracking instead of per-pixel division/modulo
-fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
+fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
   let src_bpp = self.src_bpp()
   let out_bpp = if self.pixel_depth <= 8 { 1 } else { 4 }
   let out_size = self.width * self.height * out_bpp
-  let _buf = Buffer::new(out_size)
+  let _buf = Array::make(out_size, Byte::default())
 
   let total_pixels = self.width * self.height
   let mut pixels_done = 0
@@ -187,7 +187,7 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
 
   while pixels_done < total_pixels {
     if pos >= self.data.length() {
-      return Err("TGA: unexpected end of RLE data")
+      raise Failure::Failure("TGA: unexpected end of RLE data")
     }
     let packet_header = self.data[pos].to_int()
     pos = pos + 1
@@ -195,20 +195,20 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
     let count = (packet_header & 0x7F) + 1       // 1..128 pixels
 
     if count > total_pixels - pixels_done {
-      return Err("TGA: RLE packet exceeds image pixel count")
+      raise Failure::Failure("TGA: RLE packet exceeds image pixel count")
     }
 
     if packet_type == 1 {
       // RLE packet: repeat the next pixel `count` times
       if pos + src_bpp > self.data.length() {
-        return Err("TGA: truncated RLE pixel data")
+        raise Failure::Failure("TGA: truncated RLE pixel data")
       }
-      let pixel_data = self.data[pos:pos + src_bpp]
+      let pixel_data = self.data[pos:pos + src_bpp].to_owned()
       for _i = 0; _i < count; _i = _i + 1 {
         // Map file row to output row (file may be bottom-to-top)
         let dst_y = self.src_row(cur_y)
         let dst_pixel_offset = (dst_y * self.width + cur_x) * out_bpp
-        write_tga_pixel(_buf, dst_pixel_offset, pixel_data, 0, self.pixel_depth, out_bpp)?
+        write_tga_pixel(_buf, dst_pixel_offset, pixel_data, 0, self.pixel_depth, out_bpp)
         // Advance file-order position: increment x, wrap to next row
         cur_x = cur_x + 1
         if cur_x >= self.width {
@@ -221,12 +221,12 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
       // Raw packet: read `count` pixels literally
       for _i = 0; _i < count; _i = _i + 1 {
         if pos + src_bpp > self.data.length() {
-          return Err("TGA: truncated raw pixel data")
+          raise Failure::Failure("TGA: truncated raw pixel data")
         }
         // Map file row to output row
         let dst_y = self.src_row(cur_y)
         let dst_pixel_offset = (dst_y * self.width + cur_x) * out_bpp
-        write_tga_pixel(_buf, dst_pixel_offset, self.data, pos, self.pixel_depth, out_bpp)?
+        write_tga_pixel(_buf, dst_pixel_offset, self.data, pos, self.pixel_depth, out_bpp)
         pos = pos + src_bpp
         // Advance file-order position: increment x, wrap to next row
         cur_x = cur_x + 1
@@ -240,20 +240,20 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Result[Image, String]! {
   }
 
   let format = if out_bpp == 1 { PixelFormat::Gray8 } else { PixelFormat::RGBA8 }
-  Ok(Image::new(self.width, self.height, format, _buf.to_bytes()))
+  Image::new(self.width, self.height, format, Bytes::from_array(_buf))
 }
 
 /// Write a single pixel from TGA source data to output buffer
 /// Callers (decode_rle / decode_uncompressed) validate bounds at packet/row level,
 /// so per-pixel bounds check is redundant and omitted here
 fn write_tga_pixel(
-  _buf : Buffer,
+  _buf : Array[Byte],
   dst_offset : Int,
   src : Bytes,
   src_offset : Int,
   pixel_depth : Int,
   out_bpp : Int
-) -> Result[Unit, String]! {
+) -> Unit raise Failure {
   if pixel_depth == 8 {
     _buf[dst_offset] = src[src_offset]
   } else if pixel_depth == 16 {
@@ -272,7 +272,7 @@ fn write_tga_pixel(
     _buf[dst_offset] = src[src_offset + 2]      // R
     _buf[dst_offset + 1] = src[src_offset + 1]  // G
     _buf[dst_offset + 2] = src[src_offset]      // B
-    _buf[dst_offset + 3] = '\xFF'               // A
+    _buf[dst_offset + 3] = b'\xFF'              // A
   } else {
     // 32-bit BGRA → RGBA
     _buf[dst_offset] = src[src_offset + 2]      // R
@@ -280,5 +280,5 @@ fn write_tga_pixel(
     _buf[dst_offset + 2] = src[src_offset]      // B
     _buf[dst_offset + 3] = src[src_offset + 3]  // A
   }
-  Ok(())
+  ()
 }

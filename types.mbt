@@ -158,12 +158,13 @@ pub fn Image::get_pixel(self : Image, x : Int, y : Int) -> Color {
 /// Convert this image to RGBA8 format (always 4 bytes per pixel)
 /// Uses per-format bulk loops for performance (avoids per-pixel match dispatch)
 pub fn Image::to_rgba8(self : Image) -> Image {
-  if self.format == PixelFormat::RGBA8 {
-    return self
+  match self.format {
+    PixelFormat::RGBA8 => return self
+    _ => ()
   }
   let pixel_count = self.width * self.height
   let out_size = pixel_count * 4
-  let _buf = Buffer::new(out_size)
+  let _buf = Array::make(out_size, b'\x00')
 
   match self.format {
     PixelFormat::Gray8 => {
@@ -173,7 +174,7 @@ pub fn Image::to_rgba8(self : Image) -> Image {
         _buf[dst] = v.to_byte()
         _buf[dst + 1] = v.to_byte()
         _buf[dst + 2] = v.to_byte()
-        _buf[dst + 3] = '\xFF'
+        _buf[dst + 3] = b'\xFF'
       }
     }
     PixelFormat::GrayA8 => {
@@ -195,7 +196,7 @@ pub fn Image::to_rgba8(self : Image) -> Image {
         _buf[dst] = self.data[src]
         _buf[dst + 1] = self.data[src + 1]
         _buf[dst + 2] = self.data[src + 2]
-        _buf[dst + 3] = '\xFF'
+        _buf[dst + 3] = b'\xFF'
       }
     }
     PixelFormat::BGR8 => {
@@ -205,7 +206,7 @@ pub fn Image::to_rgba8(self : Image) -> Image {
         _buf[dst] = self.data[src + 2]      // R
         _buf[dst + 1] = self.data[src + 1]  // G
         _buf[dst + 2] = self.data[src]      // B
-        _buf[dst + 3] = '\xFF'
+        _buf[dst + 3] = b'\xFF'
       }
     }
     PixelFormat::BGRA8 => {
@@ -231,67 +232,68 @@ pub fn Image::to_rgba8(self : Image) -> Image {
       }
     }
   }
-  Image::new(self.width, self.height, PixelFormat::RGBA8, _buf.to_bytes())
+  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_buf))
 }
 
 //-----------------------------------------------------------------------------
 // BitReader - Bit-level reading from Bytes
 //-----------------------------------------------------------------------------
 
-/// Bit reader for DEFLATE and other bit-stream formats
-/// Reads bits MSB-first (most significant bit first)
-pub(all) struct BitReader {
+/// Bit reader for DEFLATE (RFC 1951) bit-stream format
+/// Reads bits LSB-first (least significant bit first) as required by DEFLATE
+struct BitReader {
   data : Bytes
   byte_pos : Int
-  bit_pos : Int  // 0 = MSB, 7 = LSB
+  bit_pos : Int  // 0 = LSB, 7 = MSB (next bit to read)
 }
 
-pub(all) fn BitReader::new(data : Bytes) -> BitReader {
+fn BitReader::new(data : Bytes) -> BitReader {
   { data: data, byte_pos: 0, bit_pos: 0 }
 }
 
-/// Read a single bit (0 or 1)
-pub(all) fn BitReader::read_bit(self : BitReader) -> Result[(BitReader, Int), String]! {
+/// Read a single bit (0 or 1) in LSB-first order
+fn BitReader::read_bit(self : BitReader) -> (BitReader, Int) raise Failure {
   if self.byte_pos >= self.data.length() {
-    return Err("BitReader: unexpected end of data while reading bit")
+    raise Failure::Failure("BitReader: unexpected end of data while reading bit")
   }
   let byte = self.data[self.byte_pos].to_int()
-  let bit = (byte >> (7 - self.bit_pos)) & 1
+  let bit = (byte >> self.bit_pos) & 1
   let new_bit_pos = self.bit_pos + 1
   let new_reader = if new_bit_pos > 7 {
     { data: self.data, byte_pos: self.byte_pos + 1, bit_pos: 0 }
   } else {
     { data: self.data, byte_pos: self.byte_pos, bit_pos: new_bit_pos }
   }
-  Ok((new_reader, bit))
+  (new_reader, bit)
 }
 
-/// Read n bits as an integer, up to 16 bits
-/// Uses batch byte reading instead of per-bit loops for performance
-pub(all) fn BitReader::read_bits(self : BitReader, n : Int) -> Result[(BitReader, Int), String]! {
+/// Read n bits as an integer, up to 16 bits, in LSB-first order
+/// First bit read becomes the least significant bit of the result
+fn BitReader::read_bits(self : BitReader, n : Int) -> (BitReader, Int) raise Failure {
   if n == 0 {
-    return Ok((self, 0))
+    return (self, 0)
   }
   if n > 16 {
-    return Err("BitReader: cannot read more than 16 bits at once")
+    raise Failure::Failure("BitReader: cannot read more than 16 bits at once")
   }
 
   let mut reader = self
   let mut result = 0
   let mut needed = n
+  let mut result_pos = 0  // position where next bits go in result
 
-  // Read remaining bits from current partial byte first (these are the MSBs of our result)
+  // Read remaining bits from current partial byte first (LSBs of result)
   if reader.bit_pos != 0 {
     let bits_left = 8 - reader.bit_pos
     let take = if needed < bits_left { needed } else { bits_left }
     if reader.byte_pos >= reader.data.length() {
-      return Err("BitReader: unexpected end of data while reading bits")
+      raise Failure::Failure("BitReader: unexpected end of data while reading bits")
     }
     let byte = reader.data[reader.byte_pos].to_int()
-    // Mask the remaining bits and shift to get the top `take` bits
-    let mask = (1 << bits_left) - 1
-    let val = (byte & mask) >> (bits_left - take)
-    result = val
+    // Read bits [bit_pos .. bit_pos+take-1] from the byte (LSB-first)
+    let val = (byte >> reader.bit_pos) & ((1 << take) - 1)
+    result = result | (val << result_pos)
+    result_pos = result_pos + take
     needed = needed - take
     if take == bits_left {
       reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0 }
@@ -299,37 +301,38 @@ pub(all) fn BitReader::read_bits(self : BitReader, n : Int) -> Result[(BitReader
       reader = { data: reader.data, byte_pos: reader.byte_pos, bit_pos: reader.bit_pos + take }
     }
     if needed == 0 {
-      return Ok((reader, result))
+      return (reader, result)
     }
   }
 
-  // Read full bytes (8 bits each)
+  // Read full bytes (8 bits each, LSB-first)
   while needed >= 8 {
     if reader.byte_pos >= reader.data.length() {
-      return Err("BitReader: unexpected end of data while reading bits")
+      raise Failure::Failure("BitReader: unexpected end of data while reading bits")
     }
-    result = (result << 8) | reader.data[reader.byte_pos].to_int()
+    let byte_val = reader.data[reader.byte_pos].to_int()
+    result = result | (byte_val << result_pos)
+    result_pos = result_pos + 8
     needed = needed - 8
     reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0 }
   }
 
-  // Read remaining bits from next byte
+  // Read remaining bits from next byte (LSBs of that byte)
   if needed > 0 {
     if reader.byte_pos >= reader.data.length() {
-      return Err("BitReader: unexpected end of data while reading bits")
+      raise Failure::Failure("BitReader: unexpected end of data while reading bits")
     }
     let byte = reader.data[reader.byte_pos].to_int()
-    // Take the top `needed` bits (MSB-first within the byte)
-    let val = byte >> (8 - needed)
-    result = (result << needed) | val
+    let val = byte & ((1 << needed) - 1)
+    result = result | (val << result_pos)
     reader = { data: reader.data, byte_pos: reader.byte_pos, bit_pos: needed }
   }
 
-  Ok((reader, result))
+  (reader, result)
 }
 
 /// Align to the next byte boundary
-pub(all) fn BitReader::align_to_byte(self : BitReader) -> BitReader {
+fn BitReader::align_to_byte(self : BitReader) -> BitReader {
   if self.bit_pos == 0 {
     self
   } else {
@@ -338,24 +341,24 @@ pub(all) fn BitReader::align_to_byte(self : BitReader) -> BitReader {
 }
 
 /// Bytes remaining from current position
-pub(all) fn BitReader::remaining_bytes(self : BitReader) -> Int {
+fn BitReader::remaining_bytes(self : BitReader) -> Int {
   self.data.length() - self.byte_pos
 }
 
 /// Get a slice of remaining bytes
-pub(all) fn BitReader::remaining_data(self : BitReader) -> Bytes {
+fn BitReader::remaining_data(self : BitReader) -> BytesView {
   self.data[self.byte_pos:]
 }
 
 /// Read raw bytes from current byte position (must be byte-aligned)
-pub(all) fn BitReader::read_bytes(self : BitReader, n : Int) -> Result[(BitReader, Bytes), String]! {
+fn BitReader::read_bytes(self : BitReader, n : Int) -> (BitReader, Bytes) raise Failure {
   if self.bit_pos != 0 {
-    return Err("BitReader: cannot read bytes when not byte-aligned")
+    raise Failure::Failure("BitReader: cannot read bytes when not byte-aligned")
   }
   if self.byte_pos + n > self.data.length() {
-    return Err("BitReader: unexpected end of data")
+    raise Failure::Failure("BitReader: unexpected end of data")
   }
-  let slice = self.data[self.byte_pos:self.byte_pos + n]
+  let slice = self.data[self.byte_pos:self.byte_pos + n].to_owned()
   let new_reader = { data: self.data, byte_pos: self.byte_pos + n, bit_pos: 0 }
-  Ok((new_reader, slice))
+  (new_reader, slice)
 }

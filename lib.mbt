@@ -13,18 +13,18 @@ pub fn detect_format(data : Bytes) -> Option[ImageFormat] {
   }
 
   // PNG: \x89 P N G \r \n \x1A \n (8-byte signature)
-  if data[0] == '\x89' && data[1] == 'P' && data[2] == 'N' && data[3] == 'G' &&
-     data[4] == '\r' && data[5] == '\n' && data[6] == '\x1A' && data[7] == '\n' {
+  if data[0] == b'\x89' && data[1] == b'P' && data[2] == b'N' && data[3] == b'G' &&
+     data[4] == b'\r' && data[5] == b'\n' && data[6] == b'\x1A' && data[7] == b'\n' {
     return Some(ImageFormat::PNG)
   }
 
   // QOI: q o i f (4-byte magic)
-  if data[0] == 'q' && data[1] == 'o' && data[2] == 'i' && data[3] == 'f' {
+  if data[0] == b'q' && data[1] == b'o' && data[2] == b'i' && data[3] == b'f' {
     return Some(ImageFormat::QOI)
   }
 
   // BMP: B M (2-byte signature)
-  if data[0] == 'B' && data[1] == 'M' {
+  if data[0] == b'B' && data[1] == b'M' {
     return Some(ImageFormat::BMP)
   }
 
@@ -93,15 +93,15 @@ fn detect_tga(data : Bytes) -> Bool {
 //-----------------------------------------------------------------------------
 
 /// Auto-detect format and decode an image from raw bytes
-pub fn decode(data : Bytes) -> Result[Image, String]! {
+pub fn decode(data : Bytes) -> Image raise Failure {
   match detect_format(data) {
-    None => Err("Unsupported or unknown image format")
+    None => raise Failure::Failure("Unsupported or unknown image format")
     Some(format) => decode_by_format(data, format)
   }
 }
 
 /// Decode an image with a known format
-pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Result[Image, String]! {
+pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Image raise Failure {
   match format {
     ImageFormat::BMP => decode_bmp(data)
     ImageFormat::QOI => decode_qoi(data)
@@ -116,9 +116,9 @@ pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Result[Image, Str
 
 /// Get image dimensions from a file header without decoding pixels
 /// Much faster than decode() for inspecting image metadata
-pub fn image_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   match detect_format(data) {
-    None => Err("Unsupported or unknown image format")
+    None => raise Failure::Failure("Unsupported or unknown image format")
     Some(format) => match format {
       ImageFormat::BMP => bmp_dimensions(data)
       ImageFormat::QOI => qoi_dimensions(data)
@@ -129,49 +129,49 @@ pub fn image_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]
 }
 
 /// Read BMP dimensions from header (fast, no pixel decode)
-fn bmp_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+fn bmp_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   if data.length() < 26 {
-    return Err("BMP: file too small for header reading")
+    raise Failure::Failure("BMP: file too small for header reading")
   }
-  let width_raw = read_u32_le(data, 18)?
-  let height_raw = read_u32_le(data, 22)?
+  let width_raw = read_u32_le(data, 18)
+  let height_raw = read_u32_le(data, 22)
   let height = if height_raw < 0 { -height_raw } else { height_raw }
-  Ok((width_raw, height, ImageFormat::BMP))
+  (width_raw, height, ImageFormat::BMP)
 }
 
 /// Read QOI dimensions from header
-fn qoi_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+fn qoi_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   if data.length() < 14 {
-    return Err("QOI: file too small for header reading")
+    raise Failure::Failure("QOI: file too small for header reading")
   }
-  let width = read_u32_be(data, 4)?
-  let height = read_u32_be(data, 8)?
-  Ok((width, height, ImageFormat::QOI))
+  let width = read_u32_be(data, 4)
+  let height = read_u32_be(data, 8)
+  (width, height, ImageFormat::QOI)
 }
 
 /// Read TGA dimensions from header
-fn tga_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+fn tga_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   if data.length() < 18 {
-    return Err("TGA: file too small for header reading")
+    raise Failure::Failure("TGA: file too small for header reading")
   }
-  let width = read_u16_le(data, 12)?
-  let height = read_u16_le(data, 14)?
-  Ok((width, height, ImageFormat::TGA))
+  let width = read_u16_le(data, 12)
+  let height = read_u16_le(data, 14)
+  (width, height, ImageFormat::TGA)
 }
 
 /// Read PNG dimensions from IHDR chunk (fast, only parses the first chunk)
-fn png_dimensions(data : Bytes) -> Result[(Int, Int, ImageFormat), String]! {
+fn png_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   // PNG: 8-byte signature + 4-byte length + 4-byte "IHDR" + 13-byte IHDR data
   if data.length() < 33 {
-    return Err("PNG: file too small for IHDR reading")
+    raise Failure::Failure("PNG: file too small for IHDR reading")
   }
   // Skip signature (8), read length (4), verify "IHDR" (4)
-  if data[12] != 'I' || data[13] != 'H' || data[14] != 'D' || data[15] != 'R' {
-    return Err("PNG: first chunk is not IHDR")
+  if data[12] != b'I' || data[13] != b'H' || data[14] != b'D' || data[15] != b'R' {
+    raise Failure::Failure("PNG: first chunk is not IHDR")
   }
-  let width = read_u32_be(data, 16)?
-  let height = read_u32_be(data, 20)?
-  Ok((width, height, ImageFormat::PNG))
+  let width = read_u32_be(data, 16)
+  let height = read_u32_be(data, 20)
+  (width, height, ImageFormat::PNG)
 }
 
 //-----------------------------------------------------------------------------
