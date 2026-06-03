@@ -210,12 +210,11 @@ pub fn Image::to_rgba8(self : Image) -> Image {
     }
     PixelFormat::BGRA8 => {
       for i = 0; i < pixel_count; i = i + 1 {
-        let src = i * 4
-        let dst = i * 4
-        _buf[dst] = self.data[src + 2]      // R
-        _buf[dst + 1] = self.data[src + 1]  // G
-        _buf[dst + 2] = self.data[src]      // B
-        _buf[dst + 3] = self.data[src + 3]  // A
+        let off = i * 4
+        _buf[off] = self.data[off + 2]      // R
+        _buf[off + 1] = self.data[off + 1]  // G
+        _buf[off + 2] = self.data[off]      // B
+        _buf[off + 3] = self.data[off + 3]  // A
       }
     }
     _ => {

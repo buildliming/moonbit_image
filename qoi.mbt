@@ -70,8 +70,12 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
   let mut b = 0
   let mut a = 255
 
-  // Previously seen pixel array (64-element color cache)
-  let seen = Array::make(64, Color::default())
+  // Previously seen pixel cache (64 entries, stored as 4 separate arrays
+  // to avoid per-pixel Color::new() allocation and struct field access)
+  let seen_r = Array::make(64, 0)
+  let seen_g = Array::make(64, 0)
+  let seen_b = Array::make(64, 0)
+  let seen_a = Array::make(64, 255)
 
   let mut pos = self.pos
 
@@ -105,11 +109,10 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
     } else if (byte_val & 0xC0) == QOI_OP_INDEX {
       // Index chunk: look up previously seen color
       let idx = byte_val & 0x3F
-      let c = seen[idx]
-      r = c.r
-      g = c.g
-      b = c.b
-      a = c.a
+      r = seen_r[idx]
+      g = seen_g[idx]
+      b = seen_b[idx]
+      a = seen_a[idx]
     } else if (byte_val & 0xC0) == QOI_OP_DIFF {
       // Difference chunk: small delta from previous pixel
       let dr = ((byte_val >> 4) & 0x03) - 2
@@ -152,7 +155,10 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
       }
       // Update seen cache and continue (already wrote pixels)
       let hash = qoi_hash(r, g, b, a)
-      seen[hash] = Color::new(r, g, b, a)
+      seen_r[hash] = r
+      seen_g[hash] = g
+      seen_b[hash] = b
+      seen_a[hash] = a
       continue
     }
 
@@ -166,7 +172,10 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Result[Image, String]! {
 
     // Update seen cache
     let hash = qoi_hash(r, g, b, a)
-    seen[hash] = Color::new(r, g, b, a)
+    seen_r[hash] = r
+    seen_g[hash] = g
+    seen_b[hash] = b
+    seen_a[hash] = a
   }
 
   Ok(Image::new(self.width, self.height, PixelFormat::RGBA8, _pixels.to_bytes()))
