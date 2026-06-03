@@ -34,6 +34,7 @@ struct BmpDecoder {
   bpp : Int
   compression : Int
   data_offset : Int
+  dib_size : Int
   palette : Array[Color]
 }
 
@@ -69,6 +70,7 @@ fn BmpDecoder::new(data : Bytes) -> Result[BmpDecoder, String]! {
   Ok({
     data: data, width: width, height: height, top_down: top_down,
     bpp: bpp, compression: compression, data_offset: data_offset,
+    dib_size: dib_size,
     palette: Array::make(0, Color::default())
   })
 }
@@ -86,7 +88,7 @@ fn BmpDecoder::decode(self : BmpDecoder) -> Result[Image, String]! {
 
 /// Read palette from BMP data (after DIB header)
 fn BmpDecoder::read_palette(self : BmpDecoder, num_colors : Int) -> Array[Color] {
-  let palette_offset = 14 + 40  // file header + BITMAPINFOHEADER
+  let palette_offset = 14 + self.dib_size  // file header + DIB header
   let palette = Array::make(num_colors, Color::default())
   for i = 0; i < num_colors && i * 4 + palette_offset + 3 < self.data.length(); i = i + 1 {
     let offset = palette_offset + i * 4

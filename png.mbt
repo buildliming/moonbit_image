@@ -27,8 +27,9 @@ fn build_huffman(cl : Array[Int], ns : Int) -> HDecoder {
   let mut code = 0
   for b = 1; b <= 15; b = b + 1 { code = (code + bc[b - 1]) << 1; nc[b] = code }
 
-  // Build fast lookup table: tbl_bits bits of prefix -> symbol + code length
-  let tb = if ml >= 10 { 15 } else { ml }
+  // Build fast lookup table: tbl_bits = ml gives optimal size (2^ml entries)
+  // Kraft inequality guarantees all 2^ml entries are filled for complete Huffman trees
+  let tb = ml
   let ts = 1 << tb
   let tbl = Array::make(ts, { symbol: -1, length: 0 })
 
@@ -254,13 +255,18 @@ fn decode_block(r : BitReader, out : Buffer, lt : HDecoder, dt : HDecoder) -> Re
       if dist > ol { return Err("DEFLATE: dist>len") }
       let cs = ol - dist
       if dist >= length {
+        // Non-overlapping: simple bulk copy
         for i = 0; i < length; i = i + 1 { out.write_byte(out.view()[cs + i]) }
       } else {
-        let mut cp = 0
-        while cp < length {
-          let ch = if dist < length - cp { dist } else { length - cp }
-          for i = 0; i < ch; i = i + 1 { out.write_byte(out.view()[cs + i]) }
-          cp = cp + ch
+        // Overlapping: copy in dist-sized chunks, advancing source each iteration
+        // so that newly written bytes become the source for subsequent chunks
+        let mut remaining = length
+        let mut src_pos = cs
+        while remaining > 0 {
+          let chunk = if dist < remaining { dist } else { remaining }
+          for i = 0; i < chunk; i = i + 1 { out.write_byte(out.view()[src_pos + i]) }
+          src_pos = src_pos + chunk
+          remaining = remaining - chunk
         }
       }
     }
@@ -526,7 +532,8 @@ fn png_spp(ct : Int) -> Int {
 /// Indexed color outputs RGBA8 after palette expansion
 fn out_fmt(ct : Int) -> PixelFormat {
   match ct {
-    PC_GRAY | PC_IDX => PixelFormat::RGBA8
+    PC_GRAY => PixelFormat::Gray8
+    PC_IDX => PixelFormat::RGBA8
     PC_GA => PixelFormat::GrayA8
     PC_RGB => PixelFormat::RGB8
     PC_RGBA => PixelFormat::RGBA8
