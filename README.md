@@ -22,15 +22,14 @@ moon add lws/image
 ```moonbit
 fn main {
   // Auto-detect format and decode
-  let data = read_file("photo.png")
-  let img = @image.decode(data)?
+  let img = @image.decode(data)
   
-  println("Image: \(img.width) x \(img.height)")
-  println("Format: \(img.format)")
+  println("Image: \{img.width} x \{img.height}")
+  println("Format: \{pixel_format_name(img.format)}")
   
   // Access individual pixels
   let pixel = img.get_pixel(10, 20)
-  println("Pixel at (10,20): R=\(pixel.r) G=\(pixel.g) B=\(pixel.b) A=\(pixel.a)")
+  println("Pixel: R=\{pixel.r} G=\{pixel.g} B=\{pixel.b} A=\{pixel.a}")
 }
 ```
 
@@ -40,39 +39,45 @@ fn main {
 
 ```moonbit
 // Auto-detect format and decode
-pub fn decode(data : Bytes) -> Result[Image, String]!
+pub fn decode(data : Bytes) -> Image raise Failure
 
 // Decode with known format
-pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Result[Image, String]!
+pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Image raise Failure
 
 // Detect format from magic bytes
 pub fn detect_format(data : Bytes) -> Option[ImageFormat]
+
+// Check if data matches any supported format
+pub fn is_supported_format(data : Bytes) -> Bool
+
+// Get human-readable pixel format name
+pub fn pixel_format_name(format : PixelFormat) -> String
 ```
 
 ### Format-Specific Decoders
 
 ```moonbit
-pub fn decode_bmp(data : Bytes) -> Result[Image, String]!
-pub fn decode_qoi(data : Bytes) -> Result[Image, String]!
-pub fn decode_tga(data : Bytes) -> Result[Image, String]!
-pub fn decode_png(data : Bytes) -> Result[Image, String]!
+pub fn decode_bmp(data : Bytes) -> Image raise Failure
+pub fn decode_qoi(data : Bytes) -> Image raise Failure
+pub fn decode_tga(data : Bytes) -> Image raise Failure
+pub fn decode_png(data : Bytes) -> Image raise Failure
 ```
 
 ### Image Type
 
 ```moonbit
 pub struct Image {
-  pub width : Int
-  pub height : Int
-  pub format : PixelFormat
-  pub data : Bytes  // Raw pixel data, row-major
+  width : Int
+  height : Int
+  format : PixelFormat
+  data : Bytes  // Raw pixel data, row-major
 }
 
-// Methods
+// Constructors & methods
+pub fn Image::new(width : Int, height : Int, format : PixelFormat, data : Bytes) -> Image
 pub fn Image::get_pixel(self : Image, x : Int, y : Int) -> Color
 pub fn Image::to_rgba8(self : Image) -> Image
 pub fn Image::bytes_per_pixel(self : Image) -> Int
-pub fn Image::stride(self : Image) -> Int
 ```
 
 ### PixelFormat
@@ -83,8 +88,6 @@ pub enum PixelFormat {
   GrayA8  // 16-bit grayscale + alpha
   RGB8    // 24-bit RGB
   RGBA8   // 32-bit RGBA
-  BGR8    // 24-bit BGR
-  BGRA8   // 32-bit BGRA
 }
 ```
 
@@ -92,13 +95,17 @@ pub enum PixelFormat {
 
 ```
 lws/image
-├── lib.mbt          # Main entry: format detection + dispatch
-├── types.mbt        # Core types: Image, Color, PixelFormat, BitReader
-├── utils.mbt        # Byte reading utilities, CRC32, Adler32
-├── bmp.mbt          # BMP decoder
-├── qoi.mbt          # QOI decoder
-├── tga.mbt          # TGA decoder
-└── png.mbt          # PNG decoder + DEFLATE decompressor
+├── lib.mbt                    # Main entry: format detection + dispatch
+├── types.mbt                  # Core types: Image, Color, PixelFormat, BitReader
+├── utils.mbt                  # Byte reading utilities, CRC32, Adler32
+├── bmp.mbt                    # BMP decoder
+├── qoi.mbt                    # QOI decoder
+├── tga.mbt                    # TGA decoder
+├── png.mbt                    # PNG decoder + DEFLATE decompressor
+├── image_test.mbt             # Core tests: 24 tests covering small images + error paths
+├── medium_image_test.mbt      # Medium-size tests: 64×64 images of all 4 formats
+├── complex_image_test.mbt     # Complex pattern tests: 128×128 checkerboard, noise, etc.
+└── test_images/               # Generated test images (64/128/256/512/2048 px)
 ```
 
 ## Supported BMP Features
@@ -141,17 +148,34 @@ lws/image
 
 ### Limitations (Future Work)
 
-- 16-bit per channel support
+- 16-bit per channel depth (currently 8-bit only)
+- 1/2/4-bit indexed PNG support (indexed color at 8-bit is supported)
 - Ancillary chunk parsing (gAMA, cHRM, sRGB, etc.)
 - Streaming/incremental decode
+- Image encoders (write/save support)
 
 ## License
 
 MIT
 
+## Testing
+
+The project includes 45 tests across 3 test files:
+
+```bash
+moon test   # Run all 45 tests
+```
+
+Tests cover:
+- **Small images** (2×2 ~ 8×8): format-specific decoder correctness
+- **Medium images** (64×64): full pixel checksum verification for all 4 formats
+- **Complex patterns** (128×128): checkerboard, noise, radial gradient, Mandelbrot fractal — stresses DEFLATE compression, RLE, Huffman decoding under diverse data patterns
+- **Error handling**: truncated data, invalid magic bytes, unsupported parameters, RLE overflow, CRC mismatches
+- **Large images** (up to 2048×2048): verified via Python/PIL reference decoder
+
 ## Contributing
 
 This library aims to build out the MoonBit image processing ecosystem. Planned future additions:
-- Image encoders (write/save support)
-- Additional formats (JPEG, WebP, GIF, TIFF)
+- Additional formats (JPEG, WebP, GIF)
 - Image processing operations (resize, rotate, filters)
+- CLI/Web demo application

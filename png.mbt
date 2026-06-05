@@ -184,12 +184,14 @@ fn deflate_decompress(data : Bytes) -> Bytes raise Failure {
       out.write_bytes(ld)
     } else if bt == 1 {
       // BTYPE=1: Fixed Huffman codes
-      r = decode_block(r, out, fxl, fxd)
+      let (r2, _, _) = decode_block(r, out, fxl, fxd, 0, 0)
+      r = r2
     } else if bt == 2 {
       // BTYPE=2: Dynamic Huffman codes
-      let (r_dyn, lt, dt) = read_dyn_header(r)
+      let (r_dyn, bb_dyn, bc_dyn, lt, dt) = read_dyn_header(r)
       r = r_dyn
-      r = decode_block(r, out, lt, dt)
+      let (r2, _, _) = decode_block(r, out, lt, dt, bb_dyn, bc_dyn)
+      r = r2
     } else {
       raise Failure::Failure("DEFLATE: bad btype")
     }
@@ -200,8 +202,8 @@ fn deflate_decompress(data : Bytes) -> Bytes raise Failure {
 
 /// Decode a single DEFLATE block (BTYPE 1 or 2)
 /// Reads literal/length and distance Huffman codes with LZ77 back-references
-fn decode_block(r : BitReader, out : Buffer, lt : HDecoder, dt : HDecoder) -> BitReader raise Failure {
-  let mut xr = r; let mut bb = 0; let mut bc = 0
+fn decode_block(r : BitReader, out : Buffer, lt : HDecoder, dt : HDecoder, bb0 : Int, bc0 : Int) -> (BitReader, Int, Int) raise Failure {
+  let mut xr = r; let mut bb = bb0; let mut bc = bc0
   let lb = huff_bits(lt); let db = huff_bits(dt)
   let ml = if lb > db { lb } else { db }
   let mut done = false
@@ -281,12 +283,12 @@ fn decode_block(r : BitReader, out : Buffer, lt : HDecoder, dt : HDecoder) -> Bi
     }
   }
 
-  xr
+  (xr, bb, bc)
 }
 
 /// Read dynamic Huffman header for BTYPE=2 blocks
 /// Returns the literal/length and distance Huffman decoders
-fn read_dyn_header(r : BitReader) -> (BitReader, HDecoder, HDecoder) raise Failure {
+fn read_dyn_header(r : BitReader) -> (BitReader, Int, Int, HDecoder, HDecoder) raise Failure {
   let mut xr = r; let mut bb = 0; let mut bc = 0
 
   // Read HLIT (5 bits), HDIST (5 bits), HCLEN (4 bits)
@@ -369,7 +371,7 @@ fn read_dyn_header(r : BitReader) -> (BitReader, HDecoder, HDecoder) raise Failu
   let dla = Array::make(nd, 0)
   for j = 0; j < nd; j = j + 1 { dla[j] = cls[nl + j] }
 
-  (xr, build_huffman(lla, nl), build_huffman(dla, nd))
+  (xr, bb, bc, build_huffman(lla, nl), build_huffman(dla, nd))
 }
 
 //-----------------------------------------------------------------------------
