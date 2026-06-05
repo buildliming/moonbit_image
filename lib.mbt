@@ -71,7 +71,7 @@ fn detect_tga(data : Bytes) -> Bool {
   // Valid color map types (0=none, 1=present)
   let valid_cmap = color_map_type == 0 || color_map_type == 1
 
-  if not(valid_type) || not(valid_cmap) {
+  if !valid_type || !valid_cmap {
     return false
   }
 
@@ -193,8 +193,6 @@ pub fn pixel_format_name(format : PixelFormat) -> String {
     PixelFormat::GrayA8 => "GrayA8"
     PixelFormat::RGB8 => "RGB8"
     PixelFormat::RGBA8 => "RGBA8"
-    PixelFormat::BGR8 => "BGR8"
-    PixelFormat::BGRA8 => "BGRA8"
   }
 }
 

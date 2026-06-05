@@ -258,7 +258,7 @@ def test_tga():
     buf2 += struct.pack('<B', 0)
     buf2 += struct.pack('<B', 0)
     buf2 += struct.pack('<B', 2)
-    buf2 += struct.pack('<H', 0) * 3
+    buf2 += struct.pack('<H', 0) + struct.pack('<H', 0) + struct.pack('<B', 0)
     buf2 += struct.pack('<H', 0)  # x-origin
     buf2 += struct.pack('<H', 0)  # y-origin
     buf2 += struct.pack('<H', width)
@@ -282,7 +282,7 @@ def test_tga():
     buf3 += struct.pack('<B', 0)
     buf3 += struct.pack('<B', 0)
     buf3 += struct.pack('<B', 10)  # RLE true-color
-    buf3 += struct.pack('<H', 0) * 3
+    buf3 += struct.pack('<H', 0) + struct.pack('<H', 0) + struct.pack('<B', 0)
     buf3 += struct.pack('<H', 0) * 2  # origins
     buf3 += struct.pack('<H', width)
     buf3 += struct.pack('<H', height)

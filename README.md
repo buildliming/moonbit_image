@@ -129,7 +129,7 @@ lws/image
 
 ## Supported PNG Features
 
-- 8-bit depth: grayscale, RGB, RGBA, grayscale+alpha
+- 8-bit depth: grayscale, RGB, RGBA, grayscale+alpha, indexed color (PLTE)
 - Full DEFLATE decompression (RFC 1951)
   - Uncompressed blocks (BTYPE=0)
   - Fixed Huffman codes (BTYPE=1)
@@ -137,13 +137,11 @@ lws/image
 - All five PNG filter types: None, Sub, Up, Average, Paeth
 - zlib wrapper (RFC 1950) with header verification
 - CRC32 chunk integrity checking
-- Non-interlaced images
+- Adam7 interlaced images
 
 ### Limitations (Future Work)
 
 - 16-bit per channel support
-- Indexed color (PLTE chunk) support
-- Adam7 interlacing
 - Ancillary chunk parsing (gAMA, cHRM, sRGB, etc.)
 - Streaming/incremental decode
 

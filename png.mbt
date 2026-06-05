@@ -6,10 +6,10 @@
 //-----------------------------------------------------------------------------
 
 /// Huffman table entry: symbol value and code length
-struct HEntry { symbol : Int; length : Int }
+priv struct HEntry { symbol : Int; length : Int }
 
 /// Fast lookup Huffman decoder using a prefix table
-struct HDecoder { table : Array[HEntry]; tbl_bits : Int }
+priv struct HDecoder { table : Array[HEntry]; tbl_bits : Int }
 
 /// Build a canonical Huffman tree from an array of code lengths
 /// Uses a fast lookup table of size 2^tbl_bits for O(1) symbol decoding

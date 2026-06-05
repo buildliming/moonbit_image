@@ -17,10 +17,8 @@ pub fn decode_tga(data : Bytes) -> Image raise Failure {
 }
 
 /// TGA decoder state
-struct TgaDecoder {
+priv struct TgaDecoder {
   data : Bytes
-  id_length : Int
-  image_type : Int
   width : Int
   height : Int
   pixel_depth : Int
@@ -65,7 +63,7 @@ fn TgaDecoder::new(data : Bytes) -> TgaDecoder raise Failure {
   let id_offset = 18 + id_length
   let mut _color_map_size = 0
   if color_map_type == 1 {
-    let cm_first = read_u16_le(data, 3)
+    let _cm_first = read_u16_le(data, 3)
     let cm_length = read_u16_le(data, 5)
     let cm_entry_size = data[7].to_int()
     _color_map_size = cm_length * ((cm_entry_size + 7) / 8)
@@ -73,7 +71,7 @@ fn TgaDecoder::new(data : Bytes) -> TgaDecoder raise Failure {
   let data_offset = id_offset + _color_map_size
 
   {
-    data: data, id_length: id_length, image_type: image_type,
+    data: data,
     width: width, height: height, pixel_depth: pixel_depth,
     image_descriptor: image_descriptor, data_offset: data_offset,
     rle: rle
@@ -208,7 +206,7 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
         // Map file row to output row (file may be bottom-to-top)
         let dst_y = self.src_row(cur_y)
         let dst_pixel_offset = (dst_y * self.width + cur_x) * out_bpp
-        write_tga_pixel(_buf, dst_pixel_offset, pixel_data, 0, self.pixel_depth, out_bpp)
+        write_tga_pixel(_buf, dst_pixel_offset, pixel_data, 0, self.pixel_depth)
         // Advance file-order position: increment x, wrap to next row
         cur_x = cur_x + 1
         if cur_x >= self.width {
@@ -226,7 +224,7 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
         // Map file row to output row
         let dst_y = self.src_row(cur_y)
         let dst_pixel_offset = (dst_y * self.width + cur_x) * out_bpp
-        write_tga_pixel(_buf, dst_pixel_offset, self.data, pos, self.pixel_depth, out_bpp)
+        write_tga_pixel(_buf, dst_pixel_offset, self.data, pos, self.pixel_depth)
         pos = pos + src_bpp
         // Advance file-order position: increment x, wrap to next row
         cur_x = cur_x + 1
@@ -251,9 +249,8 @@ fn write_tga_pixel(
   dst_offset : Int,
   src : Bytes,
   src_offset : Int,
-  pixel_depth : Int,
-  out_bpp : Int
-) -> Unit raise Failure {
+  pixel_depth : Int
+) -> Unit {
   if pixel_depth == 8 {
     _buf[dst_offset] = src[src_offset]
   } else if pixel_depth == 16 {

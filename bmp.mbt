@@ -10,10 +10,8 @@
 //   - Top-down and bottom-up scan order
 
 // Compression types
-const BI_RGB       : Int = 0
 const BI_RLE8      : Int = 1
 const BI_RLE4      : Int = 2
-const BI_BITFIELDS : Int = 3
 
 //-----------------------------------------------------------------------------
 // BMP Decoder
@@ -26,7 +24,7 @@ pub fn decode_bmp(data : Bytes) -> Image raise Failure {
 }
 
 /// BMP decoder state machine
-struct BmpDecoder {
+priv struct BmpDecoder {
   data : Bytes
   width : Int
   height : Int
@@ -35,7 +33,6 @@ struct BmpDecoder {
   compression : Int
   data_offset : Int
   dib_size : Int
-  palette : Array[Color]
 }
 
 fn BmpDecoder::new(data : Bytes) -> BmpDecoder raise Failure {
@@ -70,8 +67,7 @@ fn BmpDecoder::new(data : Bytes) -> BmpDecoder raise Failure {
   {
     data: data, width: width, height: height, top_down: top_down,
     bpp: bpp, compression: compression, data_offset: data_offset,
-    dib_size: dib_size,
-    palette: Array::make(0, Color::default())
+    dib_size: dib_size
   }
 }
 

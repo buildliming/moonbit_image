@@ -15,10 +15,6 @@ pub enum PixelFormat {
   RGB8
   /// 32-bit RGBA (4 bytes per pixel, R, G, B, A)
   RGBA8
-  /// 24-bit BGR (3 bytes per pixel, B, G, R)
-  BGR8
-  /// 32-bit BGRA (4 bytes per pixel, B, G, R, A)
-  BGRA8
 }
 
 //-----------------------------------------------------------------------------
@@ -39,10 +35,10 @@ pub enum ImageFormat {
 
 /// A color represented as 8-bit RGBA components
 pub struct Color {
-  pub r : Int
-  pub g : Int
-  pub b : Int
-  pub a : Int
+  r : Int
+  g : Int
+  b : Int
+  a : Int
 }
 
 /// Constructors and utilities for Color
@@ -78,13 +74,13 @@ pub fn Color::to_gray(self : Color) -> Int {
 /// A decoded image with pixel data
 pub struct Image {
   /// Image width in pixels
-  pub width : Int
+  width : Int
   /// Image height in pixels
-  pub height : Int
+  height : Int
   /// Pixel format describing the data layout
-  pub format : PixelFormat
+  format : PixelFormat
   /// Raw pixel data, row-major order (top to bottom)
-  pub data : Bytes
+  data : Bytes
 }
 
 pub fn Image::new(width : Int, height : Int, format : PixelFormat, data : Bytes) -> Image {
@@ -98,8 +94,6 @@ pub fn Image::bytes_per_pixel(self : Image) -> Int {
     PixelFormat::GrayA8 => 2
     PixelFormat::RGB8 => 3
     PixelFormat::RGBA8 => 4
-    PixelFormat::BGR8 => 3
-    PixelFormat::BGRA8 => 4
   }
 }
 
@@ -136,19 +130,6 @@ pub fn Image::get_pixel(self : Image, x : Int, y : Int) -> Color {
       let r = self.data[offset].to_int()
       let g = self.data[offset + 1].to_int()
       let b = self.data[offset + 2].to_int()
-      let a = self.data[offset + 3].to_int()
-      Color::new(r, g, b, a)
-    }
-    PixelFormat::BGR8 => {
-      let b = self.data[offset].to_int()
-      let g = self.data[offset + 1].to_int()
-      let r = self.data[offset + 2].to_int()
-      Color::new(r, g, b, 255)
-    }
-    PixelFormat::BGRA8 => {
-      let b = self.data[offset].to_int()
-      let g = self.data[offset + 1].to_int()
-      let r = self.data[offset + 2].to_int()
       let a = self.data[offset + 3].to_int()
       Color::new(r, g, b, a)
     }
@@ -199,25 +180,6 @@ pub fn Image::to_rgba8(self : Image) -> Image {
         _buf[dst + 3] = b'\xFF'
       }
     }
-    PixelFormat::BGR8 => {
-      for i = 0; i < pixel_count; i = i + 1 {
-        let src = i * 3
-        let dst = i * 4
-        _buf[dst] = self.data[src + 2]      // R
-        _buf[dst + 1] = self.data[src + 1]  // G
-        _buf[dst + 2] = self.data[src]      // B
-        _buf[dst + 3] = b'\xFF'
-      }
-    }
-    PixelFormat::BGRA8 => {
-      for i = 0; i < pixel_count; i = i + 1 {
-        let off = i * 4
-        _buf[off] = self.data[off + 2]      // R
-        _buf[off + 1] = self.data[off + 1]  // G
-        _buf[off + 2] = self.data[off]      // B
-        _buf[off + 3] = self.data[off + 3]  // A
-      }
-    }
     _ => {
       // Fallback: per-pixel conversion (should not reach here since RGBA8 is early-returned)
       for y = 0; y < self.height; y = y + 1 {
@@ -241,7 +203,7 @@ pub fn Image::to_rgba8(self : Image) -> Image {
 
 /// Bit reader for DEFLATE (RFC 1951) bit-stream format
 /// Reads bits LSB-first (least significant bit first) as required by DEFLATE
-struct BitReader {
+priv struct BitReader {
   data : Bytes
   byte_pos : Int
   bit_pos : Int  // 0 = LSB, 7 = MSB (next bit to read)
@@ -249,22 +211,6 @@ struct BitReader {
 
 fn BitReader::new(data : Bytes) -> BitReader {
   { data: data, byte_pos: 0, bit_pos: 0 }
-}
-
-/// Read a single bit (0 or 1) in LSB-first order
-fn BitReader::read_bit(self : BitReader) -> (BitReader, Int) raise Failure {
-  if self.byte_pos >= self.data.length() {
-    raise Failure::Failure("BitReader: unexpected end of data while reading bit")
-  }
-  let byte = self.data[self.byte_pos].to_int()
-  let bit = (byte >> self.bit_pos) & 1
-  let new_bit_pos = self.bit_pos + 1
-  let new_reader = if new_bit_pos > 7 {
-    { data: self.data, byte_pos: self.byte_pos + 1, bit_pos: 0 }
-  } else {
-    { data: self.data, byte_pos: self.byte_pos, bit_pos: new_bit_pos }
-  }
-  (new_reader, bit)
 }
 
 /// Read n bits as an integer, up to 16 bits, in LSB-first order
@@ -338,16 +284,6 @@ fn BitReader::align_to_byte(self : BitReader) -> BitReader {
   } else {
     { data: self.data, byte_pos: self.byte_pos + 1, bit_pos: 0 }
   }
-}
-
-/// Bytes remaining from current position
-fn BitReader::remaining_bytes(self : BitReader) -> Int {
-  self.data.length() - self.byte_pos
-}
-
-/// Get a slice of remaining bytes
-fn BitReader::remaining_data(self : BitReader) -> BytesView {
-  self.data[self.byte_pos:]
 }
 
 /// Read raw bytes from current byte position (must be byte-aligned)

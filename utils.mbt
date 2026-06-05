@@ -5,14 +5,6 @@
 // Byte-level reading helpers
 //-----------------------------------------------------------------------------
 
-/// Read a single byte at position from Bytes
-fn read_byte(data : Bytes, pos : Int) -> Int raise Failure {
-  if pos >= data.length() {
-    raise Failure::Failure("read_byte: position out of bounds")
-  }
-  data[pos].to_int()
-}
-
 /// Read a 16-bit unsigned integer in little-endian byte order
 fn read_u16_le(data : Bytes, pos : Int) -> Int raise Failure {
   if pos + 2 > data.length() {
@@ -47,38 +39,6 @@ fn read_u32_be(data : Bytes, pos : Int) -> Int raise Failure {
   (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
 }
 
-/// Read a 16-bit unsigned integer in big-endian byte order
-fn read_u16_be(data : Bytes, pos : Int) -> Int raise Failure {
-  if pos + 2 > data.length() {
-    raise Failure::Failure("read_u16_be: position out of bounds")
-  }
-  let hi = data[pos].to_int()
-  let lo = data[pos + 1].to_int()
-  (hi << 8) | lo
-}
-
-/// Convert an Int to a Byte (clamping to 0-255)
-fn to_byte(v : Int) -> Byte {
-  if v < 0 {
-    b'\x00'
-  } else if v > 255 {
-    b'\xFF'
-  } else {
-    v.to_byte()
-  }
-}
-
-/// Clamp an Int value to the range [0, 255]
-fn clamp_u8(v : Int) -> Int {
-  if v < 0 {
-    0
-  } else if v > 255 {
-    255
-  } else {
-    v
-  }
-}
-
 //-----------------------------------------------------------------------------
 // CRC-32 checksum (used by PNG)
 //-----------------------------------------------------------------------------
@@ -104,17 +64,6 @@ fn make_crc32_table() -> Array[Int] {
     table[i] = c
   }
   table
-}
-
-/// Compute CRC-32 checksum over the given bytes
-fn crc32(data : Bytes) -> Int {
-  let mut c = 0xFFFFFFFF
-  for i = 0; i < data.length(); i = i + 1 {
-    let byte_val = data[i].to_int()
-    let idx = ((c ^ byte_val) & 0xFF)
-    c = crc32_table[idx] ^ lsr8(c)
-  }
-  c ^ 0xFFFFFFFF
 }
 
 /// Compute CRC-32 over multiple Bytes segments efficiently without concatenation

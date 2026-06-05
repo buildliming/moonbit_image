@@ -10,8 +10,6 @@ const QOI_OP_RGBA  : Int = 0xFF  // 11111111
 const QOI_OP_INDEX : Int = 0x00  // 00xxxxxx
 const QOI_OP_DIFF  : Int = 0x40  // 01xxxxxx
 const QOI_OP_LUMA  : Int = 0x80  // 10xxxxxx
-const QOI_OP_RUN   : Int = 0xC0  // 11xxxxxx
-
 /// Decode a QOI image from raw bytes
 pub fn decode_qoi(data : Bytes) -> Image raise Failure {
   let decoder = QoiDecoder::new(data)
@@ -19,13 +17,11 @@ pub fn decode_qoi(data : Bytes) -> Image raise Failure {
 }
 
 /// QOI decoder state
-struct QoiDecoder {
+priv struct QoiDecoder {
   data : Bytes
   pos : Int
   width : Int
   height : Int
-  channels : Int  // 3 = RGB, 4 = RGBA
-  colorspace : Int  // 0 = sRGB with linear alpha, 1 = all linear
 }
 
 fn QoiDecoder::new(data : Bytes) -> QoiDecoder raise Failure {
@@ -53,8 +49,7 @@ fn QoiDecoder::new(data : Bytes) -> QoiDecoder raise Failure {
   }
 
   {
-    data: data, pos: 14, width: width, height: height,
-    channels: channels, colorspace: colorspace
+    data: data, pos: 14, width: width, height: height
   }
 }
 
