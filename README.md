@@ -9,7 +9,9 @@ A comprehensive image decoding library written entirely in MoonBit, supporting m
 | **BMP** | ✅ Complete | 1/4/8/24/32-bit, top-down & bottom-up |
 | **QOI** | ✅ Complete | RGB & RGBA, full spec compliance |
 | **TGA** | ✅ Complete | Uncompressed & RLE, 8/16/24/32-bit |
-| **PNG** | ✅ Complete | 8-bit grayscale/RGB/RGBA, DEFLATE decompression |
+| **PNG** | ✅ Complete | 8-bit grayscale/RGB/RGBA, indexed, Adam7, full DEFLATE |
+| **GIF** | ✅ Complete | GIF87a/89a, LZW decompression, interlace, transparency |
+| **JPEG** | ✅ Baseline | Grayscale, DCT/IDCT, Huffman decoding |
 
 ## Installation
 
@@ -102,9 +104,13 @@ lws/image
 ├── qoi.mbt                    # QOI decoder
 ├── tga.mbt                    # TGA decoder
 ├── png.mbt                    # PNG decoder + DEFLATE decompressor
-├── image_test.mbt             # Core tests: 24 tests covering small images + error paths
-├── medium_image_test.mbt      # Medium-size tests: 64×64 images of all 4 formats
+├── gif.mbt                    # GIF decoder + LZW decompressor
+├── jpeg.mbt                   # JPEG baseline decoder (DCT/IDCT)
+├── image_test.mbt             # Core tests: 51 tests covering small images + error paths
+├── medium_image_test.mbt      # Medium-size tests: 64×64 images
 ├── complex_image_test.mbt     # Complex pattern tests: 128×128 checkerboard, noise, etc.
+├── example/                   # CLI example: image_info
+├── ARTICLE.md                 # Technical article: hand-writing DEFLATE in MoonBit
 └── test_images/               # Generated test images (64/128/256/512/2048 px)
 ```
 
@@ -146,10 +152,27 @@ lws/image
 - CRC32 chunk integrity checking
 - Adam7 interlaced images
 
+## Supported GIF Features
+
+- GIF87a and GIF89a formats
+- LZW decompression with variable-length codes (up to 12 bits)
+- Global and local color tables
+- 4-pass interlacing
+- Transparency via Graphic Control Extension
+- Output format: RGBA8 (palette expansion)
+
+## Supported JPEG Features
+
+- Baseline JPEG (SOF0) with 8-bit precision
+- Grayscale images
+- Huffman-coded DC and AC coefficients
+- Zigzag deordering, dequantization, and IDCT
+- Output format: Gray8
+
 ### Limitations (Future Work)
 
+- JPEG YCbCr color support (currently grayscale only)
 - 16-bit per channel depth (currently 8-bit only)
-- 1/2/4-bit indexed PNG support (indexed color at 8-bit is supported)
 - Ancillary chunk parsing (gAMA, cHRM, sRGB, etc.)
 - Streaming/incremental decode
 - Image encoders (write/save support)
@@ -160,10 +183,10 @@ MIT
 
 ## Testing
 
-The project includes 45 tests across 3 test files:
+The project includes 51 tests across 3 test files:
 
 ```bash
-moon test   # Run all 45 tests
+moon test   # Run all 51 tests
 ```
 
 Tests cover:
@@ -176,6 +199,6 @@ Tests cover:
 ## Contributing
 
 This library aims to build out the MoonBit image processing ecosystem. Planned future additions:
-- Additional formats (JPEG, WebP, GIF)
+- Additional formats (WebP, TIFF, AVIF)
 - Image processing operations (resize, rotate, filters)
 - CLI/Web demo application

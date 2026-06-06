@@ -23,6 +23,12 @@ pub fn detect_format(data : Bytes) -> Option[ImageFormat] {
     return Some(ImageFormat::QOI)
   }
 
+  // GIF: G I F 8 7 a or G I F 8 9 a (6-byte signature)
+  if data[0] == b'G' && data[1] == b'I' && data[2] == b'F' && data[3] == b'8' &&
+     (data[4] == b'7' || data[4] == b'9') && data[5] == b'a' {
+    return Some(ImageFormat::GIF)
+  }
+
   // BMP: B M (2-byte signature)
   if data[0] == b'B' && data[1] == b'M' {
     return Some(ImageFormat::BMP)
@@ -32,6 +38,11 @@ pub fn detect_format(data : Bytes) -> Option[ImageFormat] {
   // then fall back to header heuristic
   if detect_tga(data) {
     return Some(ImageFormat::TGA)
+  }
+
+  // JPEG: FF D8 FF marker (check this last since FF D8 can appear in other binary data)
+  if data.length() >= 3 && data[0] == b'\xFF' && data[1] == b'\xD8' {
+    return Some(ImageFormat::JPEG)
   }
 
   None
@@ -107,6 +118,8 @@ pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Image raise Failu
     ImageFormat::QOI => decode_qoi(data)
     ImageFormat::TGA => decode_tga(data)
     ImageFormat::PNG => decode_png(data)
+    ImageFormat::GIF => decode_gif(data)
+    ImageFormat::JPEG => raise Failure::Failure("JPEG: not yet implemented")
   }
 }
 
@@ -124,6 +137,8 @@ pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
       ImageFormat::QOI => qoi_dimensions(data)
       ImageFormat::TGA => tga_dimensions(data)
       ImageFormat::PNG => png_dimensions(data)
+      ImageFormat::GIF => gif_dimensions(data)
+      ImageFormat::JPEG => raise Failure::Failure("JPEG: not yet implemented")
     }
   }
 }
@@ -157,6 +172,16 @@ fn tga_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   let width = read_u16_le(data, 12)
   let height = read_u16_le(data, 14)
   (width, height, ImageFormat::TGA)
+}
+
+/// Read GIF dimensions from header
+fn gif_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
+  if data.length() < 10 {
+    raise Failure::Failure("GIF: file too small for header reading")
+  }
+  let width = read_u16_le(data, 6)
+  let height = read_u16_le(data, 8)
+  (width, height, ImageFormat::GIF)
 }
 
 /// Read PNG dimensions from IHDR chunk (fast, only parses the first chunk)
@@ -203,5 +228,7 @@ pub fn image_format_name(format : ImageFormat) -> String {
     ImageFormat::QOI => "QOI"
     ImageFormat::TGA => "TGA"
     ImageFormat::PNG => "PNG"
+    ImageFormat::GIF => "GIF"
+    ImageFormat::JPEG => "JPEG"
   }
 }
