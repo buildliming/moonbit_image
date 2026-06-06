@@ -200,6 +200,38 @@ pub fn Image::to_rgba8(self : Image) -> Image {
 }
 
 //-----------------------------------------------------------------------------
+// AnimatedImage - Multi-frame image (e.g., animated GIF)
+//-----------------------------------------------------------------------------
+
+/// A multi-frame animated image with per-frame delay timing
+pub struct AnimatedImage {
+  /// Array of decoded frames
+  frames : Array[Image]
+  /// Delay for each frame in centiseconds (1/100 second)
+  delays : Array[Int]
+  /// Canvas width in pixels
+  width : Int
+  /// Canvas height in pixels
+  height : Int
+  /// Number of times to loop (0 = infinite)
+  loop_count : Int
+}
+
+pub fn AnimatedImage::new(
+  frames : Array[Image],
+  delays : Array[Int],
+  width : Int,
+  height : Int,
+  loop_count : Int
+) -> AnimatedImage {
+  { frames: frames, delays: delays, width: width, height: height, loop_count: loop_count }
+}
+
+pub fn AnimatedImage::frame_count(self : AnimatedImage) -> Int {
+  self.frames.length()
+}
+
+//-----------------------------------------------------------------------------
 // BitReader - Bit-level reading from Bytes
 //-----------------------------------------------------------------------------
 

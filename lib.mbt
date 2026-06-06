@@ -119,7 +119,7 @@ pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Image raise Failu
     ImageFormat::TGA => decode_tga(data)
     ImageFormat::PNG => decode_png(data)
     ImageFormat::GIF => decode_gif(data)
-    ImageFormat::JPEG => raise Failure::Failure("JPEG: not yet implemented")
+    ImageFormat::JPEG => decode_jpeg(data)
   }
 }
 
@@ -138,7 +138,10 @@ pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
       ImageFormat::TGA => tga_dimensions(data)
       ImageFormat::PNG => png_dimensions(data)
       ImageFormat::GIF => gif_dimensions(data)
-      ImageFormat::JPEG => raise Failure::Failure("JPEG: not yet implemented")
+      ImageFormat::JPEG => {
+        let (w, h) = jpeg_dimensions(data)
+        (w, h, ImageFormat::JPEG)
+      }
     }
   }
 }

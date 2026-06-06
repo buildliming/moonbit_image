@@ -4,8 +4,8 @@
   "deps": {},
   "readme": "README.md",
   "repository": "https://github.com/buildliming/moonbit_image",
-  "description": "A pure MoonBit image decoding library supporting BMP, QOI, TGA, and PNG formats.",
-  "keywords": ["image", "decoder", "png", "bmp", "qoi", "tga", "graphics"],
+  "description": "A pure MoonBit image decoding library supporting BMP, QOI, TGA, PNG, GIF (including animation), and JPEG (baseline grayscale + YCbCr).",
+  "keywords": ["image", "decoder", "png", "bmp", "qoi", "tga", "gif", "jpeg", "graphics"],
   "license": "MIT",
   "authors": [
     {
