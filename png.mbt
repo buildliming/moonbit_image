@@ -131,15 +131,27 @@ let clord : Array[Int] = [
 
 /// Ensure at least `need` bits are available in the buffer
 /// Bits are accumulated LSB-first: first bit read is at position 0
+/// When the bit stream is exhausted (e.g., end-of-block padding), returns
+/// whatever bits are available instead of raising. Callers must check `cnt`
+/// to verify sufficient bits were obtained.
 fn ensure_bits(r : BitReader, buf : Int, cnt : Int, need : Int) -> (BitReader, Int, Int) raise Failure {
   let mut xr = r; let mut xb = buf; let mut xc = cnt
   while xc < need {
     // Read up to 16 bits at once
     let to_read = if need - xc > 16 { 16 } else { need - xc }
-    let (nr, val) = xr.read_bits(to_read)
-    xr = nr
-    xb = xb | (val << xc)
-    xc = xc + to_read
+    try {
+      let (nr, val) = xr.read_bits(to_read)
+      xr = nr
+      xb = xb | (val << xc)
+      xc = xc + to_read
+    } catch {
+      _ => {
+        // End of bit stream (e.g., final block with padding).
+        // Return whatever we have; the caller will detect insufficient bits
+        // via clen > bc or similar checks.
+        break
+      }
+    }
   }
   (xr, xb, xc)
 }
@@ -209,8 +221,14 @@ fn decode_block(r : BitReader, out : Buffer, lt : HDecoder, dt : HDecoder, bb0 :
   let mut done = false
 
   while !done {
-    // Ensure enough bits for a literal/length symbol
+    // Ensure enough bits for a literal/length symbol.
+    // When the stream is exhausted (e.g., after the final block's padding),
+    // ensure_bits returns with ec=0; treat this as normal end-of-block.
     let (nr, eb, ec) = ensure_bits(xr, bb, bc, ml)
+    if ec == 0 {
+      done = true
+      continue
+    }
     xr = nr
     bb = eb
     bc = ec

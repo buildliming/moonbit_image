@@ -772,34 +772,26 @@ fn GifDecoder::decode_all(self : GifDecoder) -> AnimatedImage raise Failure {
         }
       }
 
-      // Composite frame onto canvas (for disposal method 1: leave in place)
-      if disposal == 0 || disposal == 1 {
-        for i = 0; i < canvas_size; i = i + 4 {
-          if frame_buf[i + 3] != b'\x00' {
-            canvas[i] = frame_buf[i]
-            canvas[i + 1] = frame_buf[i + 1]
-            canvas[i + 2] = frame_buf[i + 2]
-            canvas[i + 3] = b'\xFF'
-          }
+      // Composite frame onto canvas so transparent pixels show the background
+      // (whether it's the original canvas, cleared to bg, or previous content)
+      for i = 0; i < canvas_size; i = i + 4 {
+        if frame_buf[i + 3] != b'\x00' {
+          canvas[i] = frame_buf[i]
+          canvas[i + 1] = frame_buf[i + 1]
+          canvas[i + 2] = frame_buf[i + 2]
+          canvas[i + 3] = b'\xFF'
         }
-        // Save the composited canvas as the frame
-        let frame_bytes = Bytes::from_array({
-          let copy = Array::make(canvas_size, b'\x00')
-          for i = 0; i < canvas_size; i = i + 1 { copy[i] = canvas[i] }
-          copy
-        })
-        frames_buf.write_bytes(frame_bytes)
-        delays_buf.write_bytes(
-          Bytes::from_array([delay.to_byte(), (delay >> 8).to_byte()])
-        )
-      } else {
-        // Disposal method 0/other: use frame directly without compositing
-        let frame_bytes = Bytes::from_array(frame_buf)
-        frames_buf.write_bytes(frame_bytes)
-        delays_buf.write_bytes(
-          Bytes::from_array([delay.to_byte(), (delay >> 8).to_byte()])
-        )
       }
+      // Save the composited canvas as the frame
+      let frame_bytes = Bytes::from_array({
+        let copy = Array::make(canvas_size, b'\x00')
+        for i = 0; i < canvas_size; i = i + 1 { copy[i] = canvas[i] }
+        copy
+      })
+      frames_buf.write_bytes(frame_bytes)
+      delays_buf.write_bytes(
+        Bytes::from_array([delay.to_byte(), (delay >> 8).to_byte()])
+      )
       continue
     }
 

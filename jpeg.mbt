@@ -227,22 +227,25 @@ fn idct_1d(v : Array[Int], out : Array[Int], os : Int) -> Unit {
 }
 
 /// 2-D IDCT on an 8x8 block, returns 64-element pixel array.
+/// Optimized: reuses 3 pre-allocated 8-element buffers instead of
+/// allocating 8 row + 8 tmp + 8 col = 24 temporary arrays per block.
 fn idct_2d(block : Array[Int]) -> Array[Int] {
   // First pass: IDCT on rows, store in transposed layout
   let t = Array::make(64, 0)
+  // Reusable 8-element buffers (allocated once per block)
+  let row_buf = Array::make(8, 0)
+  let tmp_buf = Array::make(8, 0)
+  let col_buf = Array::make(8, 0)
   for y = 0; y < 8; y = y + 1 {
-    let row = Array::make(8, 0)
-    for x = 0; x < 8; x = x + 1 { row[x] = block[y * 8 + x] }
-    let tmp = Array::make(8, 0)
-    idct_1d(row, tmp, 0)
-    for x = 0; x < 8; x = x + 1 { t[x * 8 + y] = tmp[x] }
+    for x = 0; x < 8; x = x + 1 { row_buf[x] = block[y * 8 + x] }
+    idct_1d(row_buf, tmp_buf, 0)
+    for x = 0; x < 8; x = x + 1 { t[x * 8 + y] = tmp_buf[x] }
   }
   // Second pass: IDCT on columns (rows of transposed matrix)
   let res = Array::make(64, 0)
   for x = 0; x < 8; x = x + 1 {
-    let col = Array::make(8, 0)
-    for y = 0; y < 8; y = y + 1 { col[y] = t[x * 8 + y] }
-    idct_1d(col, res, x * 8)
+    for y = 0; y < 8; y = y + 1 { col_buf[y] = t[x * 8 + y] }
+    idct_1d(col_buf, res, x * 8)
   }
   res
 }
@@ -350,6 +353,7 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
   let mut nc = 1  // number of components
 
   // Component info from SOF0
+  let mut comp_id = Array::make(0, 0) // component ID (for scan selector matching)
   let mut comp_h = Array::make(0, 0)  // horizontal sampling factor
   let mut comp_v = Array::make(0, 0)  // vertical sampling factor
   let mut comp_qt = Array::make(0, 0) // quantization table selector
@@ -418,11 +422,13 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
       comp_h = Array::make(nc, 0)
       comp_v = Array::make(nc, 0)
       comp_qt = Array::make(nc, 0)
+      comp_id = Array::make(nc, 0)
       for i = 0; i < nc; i = i + 1 {
-        let _cid = data[pos].to_int()  // component ID
+        let cid = data[pos].to_int()  // component ID
         pos = pos + 1
         let samp = data[pos].to_int()
         pos = pos + 1
+        comp_id[i] = cid
         comp_h[i] = (samp >> 4) & 0xF
         comp_v[i] = samp & 0xF
         comp_qt[i] = data[pos].to_int()
@@ -465,7 +471,7 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
       let scan_dc_ht = Array::make(ns, 0)
       let scan_ac_ht = Array::make(ns, 0)
       for i = 0; i < ns; i = i + 1 {
-        let _cs = data[pos].to_int()  // component selector
+        let cs = data[pos].to_int()  // component selector (component ID)
         pos = pos + 1
         let tdta = data[pos].to_int()
         pos = pos + 1
@@ -473,7 +479,16 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
         let ta = tdta & 0xF
         scan_dc_ht[i] = td
         scan_ac_ht[i] = ta
-        scan_comp_idx[i] = i
+        // Find the SOF component index that matches this component ID
+        let mut found = false
+        for j = 0; j < nc; j = j + 1 {
+          if comp_id[j] == cs {
+            scan_comp_idx[i] = j
+            found = true
+            break
+          }
+        }
+        if !found { scan_comp_idx[i] = i }
       }
 
       pos = pos + 3  // skip Ss, Se, Ah/Al
