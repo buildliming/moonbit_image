@@ -134,7 +134,7 @@ let clord : Array[Int] = [
 /// When the bit stream is exhausted (e.g., end-of-block padding), returns
 /// whatever bits are available instead of raising. Callers must check `cnt`
 /// to verify sufficient bits were obtained.
-fn ensure_bits(r : BitReader, buf : Int, cnt : Int, need : Int) -> (BitReader, Int, Int) raise Failure {
+fn ensure_bits(r : BitReader, buf : Int, cnt : Int, need : Int) -> (BitReader, Int, Int) {
   let mut xr = r; let mut xb = buf; let mut xc = cnt
   while xc < need {
     // Read up to 16 bits at once
