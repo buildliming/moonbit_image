@@ -11,12 +11,12 @@ A comprehensive image decoding library written entirely in MoonBit, supporting m
 | **TGA** | ✅ Complete | Uncompressed & RLE, 8/16/24/32-bit |
 | **PNG** | ✅ Complete | 8-bit grayscale/RGB/RGBA, indexed, Adam7, full DEFLATE |
 | **GIF** | ✅ Complete | GIF87a/89a, LZW decompression, interlace, transparency |
-| **JPEG** | ✅ Baseline | Grayscale, DCT/IDCT, Huffman decoding |
+| **JPEG** | ✅ Baseline | Grayscale + YCbCr color, DCT/IDCT, Huffman |
 
 ## Installation
 
 ```bash
-moon add lws/image
+moon add shunge/image
 ```
 
 ## Quick Start
@@ -63,6 +63,9 @@ pub fn decode_bmp(data : Bytes) -> Image raise Failure
 pub fn decode_qoi(data : Bytes) -> Image raise Failure
 pub fn decode_tga(data : Bytes) -> Image raise Failure
 pub fn decode_png(data : Bytes) -> Image raise Failure
+pub fn decode_gif(data : Bytes) -> Image raise Failure
+pub fn decode_jpeg(data : Bytes) -> Image raise Failure
+pub fn decode_gif_all(data : Bytes) -> AnimatedImage raise Failure  // animated GIF
 ```
 
 ### Image Type
@@ -96,7 +99,7 @@ pub enum PixelFormat {
 ## Architecture
 
 ```
-lws/image
+shunge/image
 ├── lib.mbt                    # Main entry: format detection + dispatch
 ├── types.mbt                  # Core types: Image, Color, PixelFormat, BitReader
 ├── utils.mbt                  # Byte reading utilities, CRC32, Adler32
@@ -106,9 +109,10 @@ lws/image
 ├── png.mbt                    # PNG decoder + DEFLATE decompressor
 ├── gif.mbt                    # GIF decoder + LZW decompressor
 ├── jpeg.mbt                   # JPEG baseline decoder (DCT/IDCT)
-├── image_test.mbt             # Core tests: 51 tests covering small images + error paths
+├── image_test.mbt             # Core tests: format-specific decoders + error paths
 ├── medium_image_test.mbt      # Medium-size tests: 64×64 images
-├── complex_image_test.mbt     # Complex pattern tests: 128×128 checkerboard, noise, etc.
+├── complex_image_test.mbt     # Complex pattern tests: 128×128 checkerboard, noise, Mandelbrot
+├── comprehensive_test.mbt     # Comprehensive tests: GIF/JPEG features, animated GIF, error handling
 ├── example/                   # CLI example: image_info
 ├── ARTICLE.md                 # Technical article: hand-writing DEFLATE in MoonBit
 └── test_images/               # Generated test images (64/128/256/512/2048 px)
@@ -164,14 +168,16 @@ lws/image
 ## Supported JPEG Features
 
 - Baseline JPEG (SOF0) with 8-bit precision
-- Grayscale images
-- Huffman-coded DC and AC coefficients
+- Grayscale (Gray8) and YCbCr color (RGB8) images
+- Huffman-coded DC and AC coefficients with O(1) prefix table lookup
 - Zigzag deordering, dequantization, and IDCT
-- Output format: Gray8
+- Sub-sampling: 4:4:4, 4:2:2, 4:2:0
+- Restart marker (RST) support
+- Output formats: Gray8 / RGB8
 
 ### Limitations (Future Work)
 
-- JPEG YCbCr color support (currently grayscale only)
+- JPEG progressive mode (baseline only)
 - 16-bit per channel depth (currently 8-bit only)
 - Ancillary chunk parsing (gAMA, cHRM, sRGB, etc.)
 - Streaming/incremental decode
@@ -183,10 +189,10 @@ MIT
 
 ## Testing
 
-The project includes 51 tests across 3 test files:
+The project includes 71 tests across 3 test files:
 
 ```bash
-moon test   # Run all 51 tests
+moon test   # Run all 71 tests
 ```
 
 Tests cover:
