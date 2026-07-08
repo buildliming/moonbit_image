@@ -13,24 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MoonBit
-        run: |
-          curl -fsSL https://cli.moonbitlang.com/ubuntu/install.sh | bash
-          echo "$HOME/.moon/bin" >> $GITHUB_PATH
+      - name: Setup MoonBit
+        uses: chawyehsu/setup-moonup@v2
+        with:
+          moonbit-version: latest
 
-      - name: moon check (type-check with warnings as errors)
-        run: moon check --deny-warn
+      - name: moon version
+        run: moon version --all
 
-      - name: moon fmt (verify formatting)
-        run: moon fmt --check
-
-      - name: moon check --fmt --deny-warn (format check as errors)
+      - name: moon check --fmt --deny-warn
         run: moon check --fmt --deny-warn
 
       - name: moon test
         run: moon test
 
-      - name: moon info (verify public interface is committed)
+      - name: moon info && git diff --exit-code
         run: |
           moon info
           git diff --exit-code
