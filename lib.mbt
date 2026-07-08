@@ -5,16 +5,23 @@
 // Format Detection
 //-----------------------------------------------------------------------------
 
+///|
 /// Detect the image format from magic bytes (file signature)
 /// PNG and QOI have distinctive signatures, BMP has "BM", TGA uses heuristic + footer
-pub fn detect_format(data : Bytes) -> Option[ImageFormat] {
+pub fn detect_format(data : Bytes) -> ImageFormat? {
   if data.length() < 8 {
     return None
   }
 
   // PNG: \x89 P N G \r \n \x1A \n (8-byte signature)
-  if data[0] == b'\x89' && data[1] == b'P' && data[2] == b'N' && data[3] == b'G' &&
-     data[4] == b'\r' && data[5] == b'\n' && data[6] == b'\x1A' && data[7] == b'\n' {
+  if data[0] == b'\x89' &&
+    data[1] == b'P' &&
+    data[2] == b'N' &&
+    data[3] == b'G' &&
+    data[4] == b'\r' &&
+    data[5] == b'\n' &&
+    data[6] == b'\x1A' &&
+    data[7] == b'\n' {
     return Some(ImageFormat::PNG)
   }
 
@@ -24,8 +31,12 @@ pub fn detect_format(data : Bytes) -> Option[ImageFormat] {
   }
 
   // GIF: G I F 8 7 a or G I F 8 9 a (6-byte signature)
-  if data[0] == b'G' && data[1] == b'I' && data[2] == b'F' && data[3] == b'8' &&
-     (data[4] == b'7' || data[4] == b'9') && data[5] == b'a' {
+  if data[0] == b'G' &&
+    data[1] == b'I' &&
+    data[2] == b'F' &&
+    data[3] == b'8' &&
+    (data[4] == b'7' || data[4] == b'9') &&
+    data[5] == b'a' {
     return Some(ImageFormat::GIF)
   }
 
@@ -48,6 +59,7 @@ pub fn detect_format(data : Bytes) -> Option[ImageFormat] {
   None
 }
 
+///|
 /// Try to detect TGA by footer or header heuristic
 fn detect_tga(data : Bytes) -> Bool {
   if data.length() < 18 {
@@ -78,7 +90,10 @@ fn detect_tga(data : Bytes) -> Bool {
   let image_type = data[2].to_int()
 
   // Valid TGA image types (2=uncompressed true-color, 3=grayscale, 10=RLE true-color, 11=RLE grayscale)
-  let valid_type = image_type == 2 || image_type == 3 || image_type == 10 || image_type == 11
+  let valid_type = image_type == 2 ||
+    image_type == 3 ||
+    image_type == 10 ||
+    image_type == 11
   // Valid color map types (0=none, 1=present)
   let valid_cmap = color_map_type == 0 || color_map_type == 1
 
@@ -87,14 +102,17 @@ fn detect_tga(data : Bytes) -> Bool {
   }
 
   // Validate dimensions
-  let width = (data[12].to_int()) | (data[13].to_int() << 8)
-  let height = (data[14].to_int()) | (data[15].to_int() << 8)
+  let width = data[12].to_int() | (data[13].to_int() << 8)
+  let height = data[14].to_int() | (data[15].to_int() << 8)
   if width == 0 || height == 0 {
     return false
   }
 
   let pixel_depth = data[16].to_int()
-  let valid_depth = pixel_depth == 8 || pixel_depth == 16 || pixel_depth == 24 || pixel_depth == 32
+  let valid_depth = pixel_depth == 8 ||
+    pixel_depth == 16 ||
+    pixel_depth == 24 ||
+    pixel_depth == 32
 
   id_length >= 0 && id_length < 256 && valid_depth
 }
@@ -103,6 +121,7 @@ fn detect_tga(data : Bytes) -> Bool {
 // Unified Decode API
 //-----------------------------------------------------------------------------
 
+///|
 /// Auto-detect format and decode an image from raw bytes
 pub fn decode(data : Bytes) -> Image raise Failure {
   match detect_format(data) {
@@ -111,8 +130,12 @@ pub fn decode(data : Bytes) -> Image raise Failure {
   }
 }
 
+///|
 /// Decode an image with a known format
-pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Image raise Failure {
+pub fn decode_by_format(
+  data : Bytes,
+  format : ImageFormat,
+) -> Image raise Failure {
   match format {
     ImageFormat::BMP => decode_bmp(data)
     ImageFormat::QOI => decode_qoi(data)
@@ -127,25 +150,28 @@ pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Image raise Failu
 // Header-only dimension reading (fast, no pixel decoding)
 //-----------------------------------------------------------------------------
 
+///|
 /// Get image dimensions from a file header without decoding pixels
 /// Much faster than decode() for inspecting image metadata
 pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   match detect_format(data) {
     None => raise Failure::Failure("Unsupported or unknown image format")
-    Some(format) => match format {
-      ImageFormat::BMP => bmp_dimensions(data)
-      ImageFormat::QOI => qoi_dimensions(data)
-      ImageFormat::TGA => tga_dimensions(data)
-      ImageFormat::PNG => png_dimensions(data)
-      ImageFormat::GIF => gif_dimensions(data)
-      ImageFormat::JPEG => {
-        let (w, h) = jpeg_dimensions(data)
-        (w, h, ImageFormat::JPEG)
+    Some(format) =>
+      match format {
+        ImageFormat::BMP => bmp_dimensions(data)
+        ImageFormat::QOI => qoi_dimensions(data)
+        ImageFormat::TGA => tga_dimensions(data)
+        ImageFormat::PNG => png_dimensions(data)
+        ImageFormat::GIF => gif_dimensions(data)
+        ImageFormat::JPEG => {
+          let (w, h) = jpeg_dimensions(data)
+          (w, h, ImageFormat::JPEG)
+        }
       }
-    }
   }
 }
 
+///|
 /// Read BMP dimensions from header (fast, no pixel decode)
 fn bmp_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   if data.length() < 26 {
@@ -157,6 +183,7 @@ fn bmp_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   (width_raw, height, ImageFormat::BMP)
 }
 
+///|
 /// Read QOI dimensions from header
 fn qoi_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   if data.length() < 14 {
@@ -167,6 +194,7 @@ fn qoi_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   (width, height, ImageFormat::QOI)
 }
 
+///|
 /// Read TGA dimensions from header
 fn tga_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   if data.length() < 18 {
@@ -177,6 +205,7 @@ fn tga_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   (width, height, ImageFormat::TGA)
 }
 
+///|
 /// Read GIF dimensions from header
 fn gif_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   if data.length() < 10 {
@@ -187,6 +216,7 @@ fn gif_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   (width, height, ImageFormat::GIF)
 }
 
+///|
 /// Read PNG dimensions from IHDR chunk (fast, only parses the first chunk)
 fn png_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   // PNG: 8-byte signature + 4-byte length + 4-byte "IHDR" + 13-byte IHDR data
@@ -194,7 +224,10 @@ fn png_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
     raise Failure::Failure("PNG: file too small for IHDR reading")
   }
   // Skip signature (8), read length (4), verify "IHDR" (4)
-  if data[12] != b'I' || data[13] != b'H' || data[14] != b'D' || data[15] != b'R' {
+  if data[12] != b'I' ||
+    data[13] != b'H' ||
+    data[14] != b'D' ||
+    data[15] != b'R' {
     raise Failure::Failure("PNG: first chunk is not IHDR")
   }
   let width = read_u32_be(data, 16)
@@ -206,6 +239,7 @@ fn png_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
 // Convenience Functions
 //-----------------------------------------------------------------------------
 
+///|
 /// Check if data appears to be a supported image format
 pub fn is_supported_format(data : Bytes) -> Bool {
   match detect_format(data) {
@@ -214,6 +248,7 @@ pub fn is_supported_format(data : Bytes) -> Bool {
   }
 }
 
+///|
 /// Get a human-readable string for a pixel format
 pub fn pixel_format_name(format : PixelFormat) -> String {
   match format {
@@ -224,6 +259,7 @@ pub fn pixel_format_name(format : PixelFormat) -> String {
   }
 }
 
+///|
 /// Get a human-readable string for an image format
 pub fn image_format_name(format : ImageFormat) -> String {
   match format {
@@ -233,5 +269,23 @@ pub fn image_format_name(format : ImageFormat) -> String {
     ImageFormat::PNG => "PNG"
     ImageFormat::GIF => "GIF"
     ImageFormat::JPEG => "JPEG"
+  }
+}
+
+//-----------------------------------------------------------------------------
+// Unified Encode API
+//-----------------------------------------------------------------------------
+
+///|
+/// Encode an image to the specified format
+/// Supports BMP, QOI encoding. TGA encoding planned.
+pub fn encode(img : Image, format : ImageFormat) -> Bytes raise Failure {
+  match format {
+    ImageFormat::BMP => encode_bmp(img)
+    ImageFormat::QOI => encode_qoi(img)
+    _ =>
+      raise Failure::Failure(
+        "Encoding not yet supported for " + image_format_name(format),
+      )
   }
 }

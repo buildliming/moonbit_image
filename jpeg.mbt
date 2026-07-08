@@ -17,48 +17,49 @@
 // Module-level constants (pre-computed once, not per-call)
 //-----------------------------------------------------------------------------
 
+///|
 /// Zigzag scan order (JPEG spec Figure K.2)
 let zigzag : Array[Int] = [
-  0,  1,  8, 16,  9,  2,  3, 10,
- 17, 24, 32, 25, 18, 11,  4,  5,
- 12, 19, 26, 33, 40, 48, 41, 34,
- 27, 20, 13,  6,  7, 14, 21, 28,
- 35, 42, 49, 56, 57, 50, 43, 36,
- 29, 22, 15, 23, 30, 37, 44, 51,
- 58, 59, 52, 45, 38, 31, 39, 46,
- 53, 60, 61, 54, 47, 55, 62, 63
+  0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48,
+  41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15,
+  23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62,
+  63,
 ]
 
+///|
 /// IDCT basis coefficients (scaled by 2^12 = 4096)
 /// cos((2x+1)*u*pi/16) * 4096 for each (u, x)
 let dct_t : Array[Array[Int]] = [
   [1448, 1448, 1448, 1448, 1448, 1448, 1448, 1448],
-  [2009, 1703, 1138,  400, -400,-1138,-1703,-2009],
-  [1892,  784, -784,-1892,-1892, -784,  784, 1892],
-  [1703, -400,-2009,-1138, 1138, 2009,  400,-1703],
-  [1448,-1448,-1448, 1448, 1448,-1448,-1448, 1448],
-  [1138,-2009,  400, 1703,-1703, -400, 2009,-1138],
-  [ 784,-1892, 1892, -784, -784, 1892,-1892,  784],
-  [ 400,-1138, 1703,-2009, 2009,-1703, 1138, -400]
+  [2009, 1703, 1138, 400, -400, -1138, -1703, -2009],
+  [1892, 784, -784, -1892, -1892, -784, 784, 1892],
+  [1703, -400, -2009, -1138, 1138, 2009, 400, -1703],
+  [1448, -1448, -1448, 1448, 1448, -1448, -1448, 1448],
+  [1138, -2009, 400, 1703, -1703, -400, 2009, -1138],
+  [784, -1892, 1892, -784, -784, 1892, -1892, 784],
+  [400, -1138, 1703, -2009, 2009, -1703, 1138, -400],
 ]
 
 //-----------------------------------------------------------------------------
 // Bit reader (MSB-first, used for JPEG Huffman-coded data)
 //-----------------------------------------------------------------------------
 
+///|
 /// JPEG bit reader. Uses byte_pos + bit_pos representation for efficient
 /// bulk reading.
 /// Fields are named differently from BitReader to avoid type ambiguity.
 priv struct JBR {
-  buf : Bytes   // entropy-coded data (with 0xFF00 stuffing already stripped)
-  bp : Int      // current byte position
-  bitp : Int    // next bit to read within byte (0=MSB, 7=LSB)
+  buf : Bytes // entropy-coded data (with 0xFF00 stuffing already stripped)
+  bp : Int // current byte position
+  bitp : Int // next bit to read within byte (0=MSB, 7=LSB)
 }
 
+///|
 fn JBR::new(data : Bytes) -> JBR {
   { buf: data, bp: 0, bitp: 0 }
 }
 
+///|
 /// Read n bits MSB-first. Returns (new_reader, value).
 /// Uses bulk byte reading when byte-aligned for efficiency.
 fn JBR::read_bits(self : JBR, n : Int) -> (JBR, Int) raise Failure {
@@ -108,6 +109,7 @@ fn JBR::read_bits(self : JBR, n : Int) -> (JBR, Int) raise Failure {
 // JPEG Huffman table with O(1) prefix lookup
 //-----------------------------------------------------------------------------
 
+///|
 /// JPEG Huffman table entry.
 /// Fields are named sym/len to avoid conflict with PNG's HEntry (symbol/length).
 priv struct JHTEntry {
@@ -115,6 +117,7 @@ priv struct JHTEntry {
   len : Int
 }
 
+///|
 /// JPEG Huffman table with prefix lookup for O(1) decoding.
 /// Uses the same approach as PNG's huff_decode (png.mbt:65-69).
 priv struct JHT {
@@ -122,13 +125,16 @@ priv struct JHT {
   tbl_bits : Int
 }
 
+///|
 /// Build a fast prefix-lookup Huffman table from BITS and HUFFVAL arrays.
 /// This eliminates the O(n) bit-at-a-time scan with an O(1) table lookup.
 fn build_jht(bits : Array[Int], hv_in : Array[Int]) -> JHT {
   // Find the maximum code length
   let mut max_len = 0
   for l = 1; l <= 16; l = l + 1 {
-    if bits[l - 1] > 0 { max_len = l }
+    if bits[l - 1] > 0 {
+      max_len = l
+    }
   }
   if max_len == 0 {
     // Return empty table with sentinel
@@ -178,9 +184,10 @@ fn build_jht(bits : Array[Int], hv_in : Array[Int]) -> JHT {
     }
   }
 
-  { table: tbl, tbl_bits: tbl_bits }
+  { table: tbl, tbl_bits }
 }
 
+///|
 /// Decode a symbol using the prefix lookup table.
 /// Reads one bit at a time (avoiding push-back complexity), but uses the
 /// prefix table for O(1) validation at each bit length.
@@ -207,6 +214,7 @@ fn jht_decode(ht : JHT, r : JBR) -> (JBR, Int) raise Failure {
 // IDCT (Inverse Discrete Cosine Transform)
 //-----------------------------------------------------------------------------
 
+///|
 /// 1-D IDCT on 8-element array v, writing result to out[os..os+7].
 /// Uses pre-computed module-level dct_t coefficient matrix.
 fn idct_1d(v : Array[Int], out : Array[Int], os : Int) -> Unit {
@@ -226,6 +234,7 @@ fn idct_1d(v : Array[Int], out : Array[Int], os : Int) -> Unit {
   }
 }
 
+///|
 /// 2-D IDCT on an 8x8 block, returns 64-element pixel array.
 /// Optimized: reuses 3 pre-allocated 8-element buffers instead of
 /// allocating 8 row + 8 tmp + 8 col = 24 temporary arrays per block.
@@ -237,14 +246,20 @@ fn idct_2d(block : Array[Int]) -> Array[Int] {
   let tmp_buf = Array::make(8, 0)
   let col_buf = Array::make(8, 0)
   for y = 0; y < 8; y = y + 1 {
-    for x = 0; x < 8; x = x + 1 { row_buf[x] = block[y * 8 + x] }
+    for x = 0; x < 8; x = x + 1 {
+      row_buf[x] = block[y * 8 + x]
+    }
     idct_1d(row_buf, tmp_buf, 0)
-    for x = 0; x < 8; x = x + 1 { t[x * 8 + y] = tmp_buf[x] }
+    for x = 0; x < 8; x = x + 1 {
+      t[x * 8 + y] = tmp_buf[x]
+    }
   }
   // Second pass: IDCT on columns (rows of transposed matrix)
   let res = Array::make(64, 0)
   for x = 0; x < 8; x = x + 1 {
-    for y = 0; y < 8; y = y + 1 { col_buf[y] = t[x * 8 + y] }
+    for y = 0; y < 8; y = y + 1 {
+      col_buf[y] = t[x * 8 + y]
+    }
     idct_1d(col_buf, res, x * 8)
   }
   res
@@ -254,6 +269,7 @@ fn idct_2d(block : Array[Int]) -> Array[Int] {
 // JPEG Decoder Helper Functions
 //-----------------------------------------------------------------------------
 
+///|
 /// Decode DC coefficient. Returns (reader, new_value, new_pred).
 fn jpg_dc(r : JBR, ht : JHT, pred : Int) -> (JBR, Int, Int) raise Failure {
   let (r2, cat) = jht_decode(ht, r)
@@ -267,6 +283,7 @@ fn jpg_dc(r : JBR, ht : JHT, pred : Int) -> (JBR, Int, Int) raise Failure {
   (r3, new_val, new_val)
 }
 
+///|
 /// Decode AC coefficients for one 8x8 block.
 /// Writes decoded values to block[] at zigzag positions.
 /// Returns the updated reader.
@@ -276,7 +293,9 @@ fn jpg_ac(r : JBR, ht : JHT, block : Array[Int]) -> JBR raise Failure {
   while k < 64 {
     let (r2, sym) = jht_decode(ht, reader)
     reader = r2
-    if sym == 0 { return reader }  // EOB
+    if sym == 0 {
+      return reader
+    } // EOB
     let rs = sym >> 4
     let sz = sym & 0xF
     if sz == 0 && rs == 15 {
@@ -285,30 +304,41 @@ fn jpg_ac(r : JBR, ht : JHT, block : Array[Int]) -> JBR raise Failure {
       continue
     }
     k = k + rs
-    if k >= 64 { break }
+    if k >= 64 {
+      break
+    }
     if sz > 0 {
       let (r3, bits) = reader.read_bits(sz)
       reader = r3
       let half = 1 << (sz - 1)
       let val = if bits < half { bits - ((1 << sz) - 1) } else { bits }
       let zi = zigzag[k]
-      if zi < 64 { block[zi] = val }
+      if zi < 64 {
+        block[zi] = val
+      }
     }
     k = k + 1
   }
   reader
 }
 
+///|
 /// Decode one 8x8 block. Returns (reader, new_dc_pred, pixel_array[64]).
 fn jpg_block(
-  r : JBR, dc_ht : JHT, ac_ht : JHT, qt : Array[Int], dc_pred : Int
+  r : JBR,
+  dc_ht : JHT,
+  ac_ht : JHT,
+  qt : Array[Int],
+  dc_pred : Int,
 ) -> (JBR, Int, Array[Int]) raise Failure {
   let block = Array::make(64, 0)
   let (r2, _dc_val, ndc) = jpg_dc(r, dc_ht, dc_pred)
   let r3 = jpg_ac(r2, ac_ht, block)
   block[0] = ndc
   // Dequantize
-  for i = 0; i < 64; i = i + 1 { block[i] = block[i] * qt[i] }
+  for i = 0; i < 64; i = i + 1 {
+    block[i] = block[i] * qt[i]
+  }
   (r3, ndc, idct_2d(block))
 }
 
@@ -316,6 +346,7 @@ fn jpg_block(
 // YCbCr → RGB conversion (ITU-R BT.601, 12-bit fixed point)
 //-----------------------------------------------------------------------------
 
+///|
 /// Convert YCbCr to RGB using ITU-R BT.601 coefficients with 12 fractional bits.
 /// All values are clamped to [0, 255].
 fn ycbcr_to_rgb(y : Int, cb : Int, cr : Int) -> (Int, Int, Int) {
@@ -340,6 +371,7 @@ fn ycbcr_to_rgb(y : Int, cb : Int, cr : Int) -> (Int, Int, Int) {
 // Main JPEG decoder
 //-----------------------------------------------------------------------------
 
+///|
 /// Decode a JPEG image from raw bytes.
 /// Supports grayscale (1-component) and YCbCr color (3-component) baseline JPEG.
 pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
@@ -350,19 +382,22 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
   let mut pos = 2
   let mut w = 0
   let mut h = 0
-  let mut nc = 1  // number of components
+  let mut nc = 1 // number of components
 
   // Component info from SOF0
   let mut comp_id = Array::make(0, 0) // component ID (for scan selector matching)
-  let mut comp_h = Array::make(0, 0)  // horizontal sampling factor
-  let mut comp_v = Array::make(0, 0)  // vertical sampling factor
+  let mut comp_h = Array::make(0, 0) // horizontal sampling factor
+  let mut comp_v = Array::make(0, 0) // vertical sampling factor
   let mut comp_qt = Array::make(0, 0) // quantization table selector
 
   // Quantization tables (up to 4)
   let qt = Array::make(4, Array::make(64, 1))
 
   // Huffman tables: [TC][TH] where TC=0:DC, TC=1:AC
-  let ht_sentinel = JHT::{ table: Array::make(1, { sym: -1, len: 0 }), tbl_bits: 0 }
+  let ht_sentinel = JHT::{
+    table: Array::make(1, { sym: -1, len: 0 }),
+    tbl_bits: 0,
+  }
   let dc_ht = Array::make(4, ht_sentinel)
   let ac_ht = Array::make(4, ht_sentinel)
 
@@ -379,16 +414,24 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
     pos = pos + 1
 
     // Skip padding bytes and RST markers in header
-    if mb == 0x00 { continue }
-    if mb == 0xD8 { continue }  // SOI
-    if mb >= 0xD0 && mb <= 0xD7 { continue }  // RST markers (shouldn't appear outside SOS)
-    if mb == 0xD9 { break }  // EOI
+    if mb == 0x00 {
+      continue
+    }
+    if mb == 0xD8 {
+      continue
+    } // SOI
+    if mb >= 0xD0 && mb <= 0xD7 {
+      continue
+    } // RST markers (shouldn't appear outside SOS)
+    if mb == 0xD9 {
+      break
+    } // EOI
 
     let len = (data[pos].to_int() << 8) | data[pos + 1].to_int()
     pos = pos + 2
     let end = pos + len - 2
 
-    if mb == 0xDB {  // DQT - Define Quantization Table
+    if mb == 0xDB { // DQT - Define Quantization Table
       while pos < end {
         let info = data[pos].to_int()
         pos = pos + 1
@@ -404,9 +447,11 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
             pos = pos + 2
           }
         }
-        if tid < 4 { qt[tid] = tbl }
+        if tid < 4 {
+          qt[tid] = tbl
+        }
       }
-    } else if mb == 0xC0 {  // SOF0 - Start of Frame (baseline)
+    } else if mb == 0xC0 { // SOF0 - Start of Frame (baseline)
       let _precision = data[pos].to_int()
       pos = pos + 1
       let hi_h = data[pos].to_int()
@@ -424,7 +469,7 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
       comp_qt = Array::make(nc, 0)
       comp_id = Array::make(nc, 0)
       for i = 0; i < nc; i = i + 1 {
-        let cid = data[pos].to_int()  // component ID
+        let cid = data[pos].to_int() // component ID
         pos = pos + 1
         let samp = data[pos].to_int()
         pos = pos + 1
@@ -434,11 +479,11 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
         comp_qt[i] = data[pos].to_int()
         pos = pos + 1
       }
-    } else if mb == 0xC4 {  // DHT - Define Huffman Table
+    } else if mb == 0xC4 { // DHT - Define Huffman Table
       while pos < end {
         let info = data[pos].to_int()
         pos = pos + 1
-        let tc = (info >> 4) & 1  // 0=DC, 1=AC
+        let tc = (info >> 4) & 1 // 0=DC, 1=AC
         let th = info & 0xF
         let bits = Array::make(16, 0)
         let mut total = 0
@@ -454,24 +499,26 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
         }
         let ht = build_jht(bits, hv)
         if tc == 0 {
-          if th < 4 { dc_ht[th] = ht }
-        } else {
-          if th < 4 { ac_ht[th] = ht }
+          if th < 4 {
+            dc_ht[th] = ht
+          }
+        } else if th < 4 {
+          ac_ht[th] = ht
         }
       }
-    } else if mb == 0xDD {  // DRI - Define Restart Interval
+    } else if mb == 0xDD { // DRI - Define Restart Interval
       restart_interval = (data[pos].to_int() << 8) | data[pos + 1].to_int()
       pos = end
-    } else if mb == 0xDA {  // SOS - Start of Scan
-      let ns = data[pos].to_int()  // number of scan components
+    } else if mb == 0xDA { // SOS - Start of Scan
+      let ns = data[pos].to_int() // number of scan components
       pos = pos + 1
 
       // Read scan component selectors: (component_id, dc_table, ac_table)
-      let scan_comp_idx = Array::make(ns, 0)  // maps scan component → SOF component index
+      let scan_comp_idx = Array::make(ns, 0) // maps scan component → SOF component index
       let scan_dc_ht = Array::make(ns, 0)
       let scan_ac_ht = Array::make(ns, 0)
       for i = 0; i < ns; i = i + 1 {
-        let cs = data[pos].to_int()  // component selector (component ID)
+        let cs = data[pos].to_int() // component selector (component ID)
         pos = pos + 1
         let tdta = data[pos].to_int()
         pos = pos + 1
@@ -488,10 +535,12 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
             break
           }
         }
-        if !found { scan_comp_idx[i] = i }
+        if !found {
+          scan_comp_idx[i] = i
+        }
       }
 
-      pos = pos + 3  // skip Ss, Se, Ah/Al
+      pos = pos + 3 // skip Ss, Se, Ah/Al
 
       // Collect entropy-coded data (until next marker, stripping 0xFF00 byte stuffing)
       let ec_buf = Buffer()
@@ -500,7 +549,9 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
         if b0 == 0xFF {
           let b1 = data[pos + 1].to_int()
           // Check for end-of-scan markers (anything other than 0x00 and RST0-7)
-          if b1 != 0x00 && (b1 < 0xD0 || b1 > 0xD7) { break }
+          if b1 != 0x00 && (b1 < 0xD0 || b1 > 0xD7) {
+            break
+          }
           if b1 == 0x00 {
             ec_buf.write_byte(b'\xFF')
             pos = pos + 2
@@ -520,8 +571,12 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
       let mut max_h = 1
       let mut max_v = 1
       for i = 0; i < nc; i = i + 1 {
-        if comp_h[i] > max_h { max_h = comp_h[i] }
-        if comp_v[i] > max_v { max_v = comp_v[i] }
+        if comp_h[i] > max_h {
+          max_h = comp_h[i]
+        }
+        if comp_v[i] > max_v {
+          max_v = comp_v[i]
+        }
       }
       let mcu_w = max_h * 8
       let mcu_h = max_v * 8
@@ -563,8 +618,10 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
               for vx = 0; vx < sf_h; vx = vx + 1 {
                 let (r2, ndc, pixels) = jpg_block(
                   reader,
-                  dc_ht[dht_dc], ac_ht[dht_ac],
-                  qt[qti], dc_pred[ci]
+                  dc_ht[dht_dc],
+                  ac_ht[dht_ac],
+                  qt[qti],
+                  dc_pred[ci],
                 )
                 reader = r2
                 dc_pred[ci] = ndc
@@ -577,10 +634,14 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
                 let plane_h = comp_h_plane[ci]
                 for py = 0; py < 8; py = py + 1 {
                   let oy = block_y + py
-                  if oy >= plane_h { continue }
+                  if oy >= plane_h {
+                    continue
+                  }
                   for px = 0; px < 8; px = px + 1 {
                     let ox = block_x + px
-                    if ox >= plane_w { continue }
+                    if ox >= plane_w {
+                      continue
+                    }
                     plane[oy * plane_w + ox] = pixels[py * 8 + px].to_byte()
                   }
                 }
@@ -589,7 +650,9 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
 
                 // Handle restart marker
                 if restart_interval > 0 && block_counter % restart_interval == 0 {
-                  for i = 0; i < nc; i = i + 1 { dc_pred[i] = 0 }
+                  for i = 0; i < nc; i = i + 1 {
+                    dc_pred[i] = 0
+                  }
                   reader = { buf: reader.buf, bp: reader.bp, bitp: 0 }
                 }
               }
@@ -652,6 +715,7 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
   raise Failure::Failure("JPEG: no SOS marker found")
 }
 
+///|
 /// Read JPEG dimensions from header without decoding pixels.
 /// Fast path: scans for SOF0 marker and extracts width/height.
 pub fn jpeg_dimensions(data : Bytes) -> (Int, Int) raise Failure {
@@ -668,16 +732,24 @@ pub fn jpeg_dimensions(data : Bytes) -> (Int, Int) raise Failure {
     let mb = data[pos].to_int()
     pos = pos + 1
 
-    if mb == 0x00 { continue }
-    if mb == 0xD8 { continue }
-    if mb >= 0xD0 && mb <= 0xD7 { continue }
-    if mb == 0xD9 { break }
+    if mb == 0x00 {
+      continue
+    }
+    if mb == 0xD8 {
+      continue
+    }
+    if mb >= 0xD0 && mb <= 0xD7 {
+      continue
+    }
+    if mb == 0xD9 {
+      break
+    }
 
     let len = (data[pos].to_int() << 8) | data[pos + 1].to_int()
     pos = pos + 2
     let end = pos + len - 2
 
-    if mb == 0xC0 {  // SOF0
+    if mb == 0xC0 { // SOF0
       let _precision = data[pos].to_int()
       pos = pos + 1
       let hi_h = data[pos].to_int()

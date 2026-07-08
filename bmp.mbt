@@ -10,19 +10,25 @@
 //   - Top-down and bottom-up scan order
 
 // Compression types
-const BI_RLE8      : Int = 1
-const BI_RLE4      : Int = 2
+
+///|
+const BI_RLE8 : Int = 1
+
+///|
+const BI_RLE4 : Int = 2
 
 //-----------------------------------------------------------------------------
 // BMP Decoder
 //-----------------------------------------------------------------------------
 
+///|
 /// Decode a BMP image from raw bytes
 pub fn decode_bmp(data : Bytes) -> Image raise Failure {
   let decoder = BmpDecoder::new(data)
   decoder.decode()
 }
 
+///|
 /// BMP decoder state machine
 priv struct BmpDecoder {
   data : Bytes
@@ -35,6 +41,7 @@ priv struct BmpDecoder {
   dib_size : Int
 }
 
+///|
 fn BmpDecoder::new(data : Bytes) -> BmpDecoder raise Failure {
   // Verify BMP signature
   if data.length() < 2 {
@@ -51,7 +58,9 @@ fn BmpDecoder::new(data : Bytes) -> BmpDecoder raise Failure {
   }
   let dib_size = read_u32_le(data, 14)
   if dib_size < 40 {
-    raise Failure::Failure("BMP: unsupported DIB header (BITMAPINFOHEADER required)")
+    raise Failure::Failure(
+      "BMP: unsupported DIB header (BITMAPINFOHEADER required)",
+    )
   }
   let width_raw = read_u32_le(data, 18)
   let height_raw = read_u32_le(data, 22)
@@ -64,29 +73,42 @@ fn BmpDecoder::new(data : Bytes) -> BmpDecoder raise Failure {
   }
   let bpp = read_u16_le(data, 28)
   let compression = read_u32_le(data, 30)
-  {
-    data: data, width: width, height: height, top_down: top_down,
-    bpp: bpp, compression: compression, data_offset: data_offset,
-    dib_size: dib_size
-  }
+  { data, width, height, top_down, bpp, compression, data_offset, dib_size }
 }
 
+///|
 fn BmpDecoder::decode(self : BmpDecoder) -> Image raise Failure {
   match self.bpp {
     32 => self.decode_rgba()
     24 => self.decode_24bit()
-    8 => if self.compression == BI_RLE8 { self.decode_rle8() } else { self.decode_8bit() }
-    4 => if self.compression == BI_RLE4 { self.decode_rle4() } else { self.decode_4bit() }
+    8 =>
+      if self.compression == BI_RLE8 {
+        self.decode_rle8()
+      } else {
+        self.decode_8bit()
+      }
+    4 =>
+      if self.compression == BI_RLE4 {
+        self.decode_rle4()
+      } else {
+        self.decode_4bit()
+      }
     1 => self.decode_1bit()
     _ => raise Failure::Failure("BMP: unsupported bit depth: \{self.bpp}")
   }
 }
 
+///|
 /// Read palette from BMP data (after DIB header)
-fn BmpDecoder::read_palette(self : BmpDecoder, num_colors : Int) -> Array[Color] {
-  let palette_offset = 14 + self.dib_size  // file header + DIB header
+fn BmpDecoder::read_palette(
+  self : BmpDecoder,
+  num_colors : Int,
+) -> Array[Color] {
+  let palette_offset = 14 + self.dib_size // file header + DIB header
   let palette = Array::make(num_colors, Color::default())
-  for i = 0; i < num_colors && i * 4 + palette_offset + 3 < self.data.length(); i = i + 1 {
+  for i = 0
+      i < num_colors && i * 4 + palette_offset + 3 < self.data.length()
+      i = i + 1 {
     let offset = palette_offset + i * 4
     let b = self.data[offset].to_int()
     let g = self.data[offset + 1].to_int()
@@ -96,9 +118,12 @@ fn BmpDecoder::read_palette(self : BmpDecoder, num_colors : Int) -> Array[Color]
   palette
 }
 
+///|
 /// Pre-compute palette as RGBA byte quads for fast indexed decoding
 fn palette_to_rgba_bytes(palette : Array[Color]) -> Array[Array[Byte]] {
-  let result = Array::make(palette.length(), [b'\x00', b'\x00', b'\x00', b'\xFF'])
+  let result = Array::make(palette.length(), [
+    b'\x00', b'\x00', b'\x00', b'\xFF',
+  ])
   for i = 0; i < palette.length(); i = i + 1 {
     let c = palette[i]
     result[i] = [c.r.to_byte(), c.g.to_byte(), c.b.to_byte(), c.a.to_byte()]
@@ -106,17 +131,22 @@ fn palette_to_rgba_bytes(palette : Array[Color]) -> Array[Array[Byte]] {
   result
 }
 
+///|
 /// Row stride in bytes (padded to 4-byte boundary)
 fn bmp_row_stride(width : Int, bpp : Int) -> Int {
   let row_bits = width * bpp
   let row_bytes = (row_bits + 7) / 8
-  ((row_bytes + 3) / 4) * 4
+  (row_bytes + 3) / 4 * 4
 }
 
+///|
 /// Write a palette color to the output buffer at a pixel position
 fn write_palette_pixel(
-  _buf : Array[Byte], dst : Int, idx : Int, num_colors : Int,
-  palette_rgba : Array[Array[Byte]]
+  _buf : Array[Byte],
+  dst : Int,
+  idx : Int,
+  num_colors : Int,
+  palette_rgba : Array[Array[Byte]],
 ) -> Unit {
   if idx < num_colors {
     let c = palette_rgba[idx]
@@ -132,6 +162,7 @@ fn write_palette_pixel(
   }
 }
 
+///|
 /// Decode 32-bit BGRA
 fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Image raise Failure {
   let stride = bmp_row_stride(self.width, 32)
@@ -149,15 +180,21 @@ fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Image raise Failure {
       let src = row_offset + col * 4
       let dst = (row * self.width + col) * 4
       // BMP stores BGRA in little-endian: byte order is B, G, R, A
-      _buf[dst] = self.data[src + 2]      // R
-      _buf[dst + 1] = self.data[src + 1]  // G
-      _buf[dst + 2] = self.data[src]      // B
-      _buf[dst + 3] = self.data[src + 3]  // A
+      _buf[dst] = self.data[src + 2] // R
+      _buf[dst + 1] = self.data[src + 1] // G
+      _buf[dst + 2] = self.data[src] // B
+      _buf[dst + 3] = self.data[src + 3] // A
     }
   }
-  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_buf))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGBA8,
+    Bytes::from_array(_buf),
+  )
 }
 
+///|
 /// Decode 24-bit BGR
 fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Image raise Failure {
   let stride = bmp_row_stride(self.width, 24)
@@ -175,14 +212,20 @@ fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Image raise Failure {
       let src = row_offset + col * 3
       let dst = (row * self.width + col) * 3
       // BMP stores BGR
-      _buf[dst] = self.data[src + 2]      // R
-      _buf[dst + 1] = self.data[src + 1]  // G
-      _buf[dst + 2] = self.data[src]      // B
+      _buf[dst] = self.data[src + 2] // R
+      _buf[dst + 1] = self.data[src + 1] // G
+      _buf[dst + 2] = self.data[src] // B
     }
   }
-  Image::new(self.width, self.height, PixelFormat::RGB8, Bytes::from_array(_buf))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGB8,
+    Bytes::from_array(_buf),
+  )
 }
 
+///|
 /// Decode 8-bit indexed (uncompressed) — uses pre-computed palette
 fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Image raise Failure {
   let palette = self.read_palette(256)
@@ -205,9 +248,15 @@ fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Image raise Failure {
       write_palette_pixel(_buf, dst, idx, 256, palette_rgba)
     }
   }
-  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_buf))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGBA8,
+    Bytes::from_array(_buf),
+  )
 }
 
+///|
 /// Decode 4-bit indexed (uncompressed)
 fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Image raise Failure {
   let palette = self.read_palette(16)
@@ -227,14 +276,24 @@ fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Image raise Failure {
       let src = row_offset + col / 2
       let byte_val = self.data[src].to_int()
       // High nibble first (leftmost pixel)
-      let idx = if col % 2 == 0 { (byte_val >> 4) & 0xF } else { byte_val & 0xF }
+      let idx = if col % 2 == 0 {
+        (byte_val >> 4) & 0xF
+      } else {
+        byte_val & 0xF
+      }
       let dst = (row * self.width + col) * 4
       write_palette_pixel(_buf, dst, idx, 16, palette_rgba)
     }
   }
-  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_buf))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGBA8,
+    Bytes::from_array(_buf),
+  )
 }
 
+///|
 /// Decode 1-bit monochrome
 fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Image raise Failure {
   let palette = self.read_palette(2)
@@ -259,13 +318,19 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Image raise Failure {
       write_palette_pixel(_buf, dst, bit, 2, palette_rgba)
     }
   }
-  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_buf))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGBA8,
+    Bytes::from_array(_buf),
+  )
 }
 
 //-----------------------------------------------------------------------------
 // BMP RLE8 Decoder
 //-----------------------------------------------------------------------------
 
+///|
 /// Decode RLE8 compressed 8-bit BMP
 /// Uses valid_row flag updated on row transitions to avoid per-pixel bounds checks
 fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
@@ -347,13 +412,19 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
     }
   }
 
-  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_buf))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGBA8,
+    Bytes::from_array(_buf),
+  )
 }
 
 //-----------------------------------------------------------------------------
 // BMP RLE4 Decoder
 //-----------------------------------------------------------------------------
 
+///|
 /// Decode RLE4 compressed 4-bit BMP
 /// Uses valid_row flag updated on row transitions to avoid per-pixel bounds checks
 fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
@@ -451,5 +522,10 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
     }
   }
 
-  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_buf))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGBA8,
+    Bytes::from_array(_buf),
+  )
 }

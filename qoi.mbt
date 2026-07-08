@@ -5,17 +5,30 @@
 // Specification: https://qoiformat.org/
 
 // QOI chunk types (identified by high bits of first byte)
-const QOI_OP_RGB   : Int = 0xFE  // 11111110
-const QOI_OP_RGBA  : Int = 0xFF  // 11111111
-const QOI_OP_INDEX : Int = 0x00  // 00xxxxxx
-const QOI_OP_DIFF  : Int = 0x40  // 01xxxxxx
-const QOI_OP_LUMA  : Int = 0x80  // 10xxxxxx
+
+///|
+const QOI_OP_RGB : Int = 0xFE // 11111110
+
+///|
+const QOI_OP_RGBA : Int = 0xFF // 11111111
+
+///|
+const QOI_OP_INDEX : Int = 0x00 // 00xxxxxx
+
+///|
+const QOI_OP_DIFF : Int = 0x40 // 01xxxxxx
+
+///|
+const QOI_OP_LUMA : Int = 0x80 // 10xxxxxx
+
+///|
 /// Decode a QOI image from raw bytes
 pub fn decode_qoi(data : Bytes) -> Image raise Failure {
   let decoder = QoiDecoder::new(data)
   decoder.decode()
 }
 
+///|
 /// QOI decoder state
 priv struct QoiDecoder {
   data : Bytes
@@ -24,6 +37,7 @@ priv struct QoiDecoder {
   height : Int
 }
 
+///|
 fn QoiDecoder::new(data : Bytes) -> QoiDecoder raise Failure {
   // Check minimum size: header (14) + end marker (8)
   if data.length() < 22 {
@@ -48,14 +62,13 @@ fn QoiDecoder::new(data : Bytes) -> QoiDecoder raise Failure {
     raise Failure::Failure("QOI: invalid colorspace value")
   }
 
-  {
-    data: data, pos: 14, width: width, height: height
-  }
+  { data, pos: 14, width, height }
 }
 
+///|
 fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
   let pixel_count = self.width * self.height
-  let out_size = pixel_count * 4  // Always output RGBA8
+  let out_size = pixel_count * 4 // Always output RGBA8
   let _pixels = Array::make(out_size, Byte::default())
   let mut pixel_idx = 0
 
@@ -173,9 +186,15 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
     seen_a[hash] = a
   }
 
-  Image::new(self.width, self.height, PixelFormat::RGBA8, Bytes::from_array(_pixels))
+  Image::new(
+    self.width,
+    self.height,
+    PixelFormat::RGBA8,
+    Bytes::from_array(_pixels),
+  )
 }
 
+///|
 /// QOI color hash function: (r*3 + g*5 + b*7 + a*11) % 64
 fn qoi_hash(r : Int, g : Int, b : Int, a : Int) -> Int {
   (r * 3 + g * 5 + b * 7 + a * 11) % 64

@@ -5,6 +5,7 @@
 // Byte-level reading helpers
 //-----------------------------------------------------------------------------
 
+///|
 /// Read a 16-bit unsigned integer in little-endian byte order
 fn read_u16_le(data : Bytes, pos : Int) -> Int raise Failure {
   if pos + 2 > data.length() {
@@ -15,6 +16,7 @@ fn read_u16_le(data : Bytes, pos : Int) -> Int raise Failure {
   lo | (hi << 8)
 }
 
+///|
 /// Read a 32-bit unsigned integer in little-endian byte order
 fn read_u32_le(data : Bytes, pos : Int) -> Int raise Failure {
   if pos + 4 > data.length() {
@@ -27,6 +29,7 @@ fn read_u32_le(data : Bytes, pos : Int) -> Int raise Failure {
   b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
 
+///|
 /// Read a 32-bit unsigned integer in big-endian byte order
 fn read_u32_be(data : Bytes, pos : Int) -> Int raise Failure {
   if pos + 4 > data.length() {
@@ -43,13 +46,22 @@ fn read_u32_be(data : Bytes, pos : Int) -> Int raise Failure {
 // CRC-32 checksum (used by PNG)
 //-----------------------------------------------------------------------------
 
+///|
 /// Pre-computed CRC-32 lookup table (computed once at module init)
 let crc32_table : Array[Int] = make_crc32_table()
 
+///|
 /// Logical right shift: forces unsigned semantics by masking out sign-extended bits
-fn lsr8(v : Int) -> Int { (v >> 8) & 0x00FFFFFF }
-fn lsr1(v : Int) -> Int { (v >> 1) & 0x7FFFFFFF }
+fn lsr8(v : Int) -> Int {
+  (v >> 8) & 0x00FFFFFF
+}
 
+///|
+fn lsr1(v : Int) -> Int {
+  (v >> 1) & 0x7FFFFFFF
+}
+
+///|
 fn make_crc32_table() -> Array[Int] {
   let table = Array::make(256, 0)
   for i = 0; i < 256; i = i + 1 {
@@ -66,18 +78,20 @@ fn make_crc32_table() -> Array[Int] {
   table
 }
 
+///|
 /// Compute CRC-32 over multiple Bytes segments efficiently without concatenation
 /// Pass previous crc32 result as `initial` to continue (use 0 for first segment)
 fn crc32_update(initial : Int, data : Bytes) -> Int {
   let mut c = initial ^ 0xFFFFFFFF
   for i = 0; i < data.length(); i = i + 1 {
     let byte_val = data[i].to_int()
-    let idx = ((c ^ byte_val) & 0xFF)
+    let idx = (c ^ byte_val) & 0xFF
     c = crc32_table[idx] ^ lsr8(c)
   }
   c ^ 0xFFFFFFFF
 }
 
+///|
 /// Convenience: compute CRC-32 of chunk_type + chunk_data without allocating
 fn crc32_chunk(chunk_type : Bytes, chunk_data : Bytes) -> Int {
   let initial = crc32_update(0, chunk_type)
@@ -88,6 +102,7 @@ fn crc32_chunk(chunk_type : Bytes, chunk_data : Bytes) -> Int {
 // Adler-32 checksum (used by zlib/DEFLATE)
 //-----------------------------------------------------------------------------
 
+///|
 /// Compute Adler-32 checksum over the given bytes
 fn adler32(data : Bytes) -> Int {
   let mut s1 = 1

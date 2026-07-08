@@ -1,6 +1,7 @@
 # MoonBit build output
 /target/
 /_build/
+**/_build/
 
 # IDE
 .idea/
@@ -14,3 +15,6 @@ Thumbs.db
 
 # Generated test artifacts
 test_images/
+
+# Generated MoonBit interface files are committed for CI verification
+# pkg.generated.mbti — committed, do NOT ignore

@@ -1,0 +1,120 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "shunge/image"
+
+// Values
+pub fn decode(Bytes) -> Image raise Failure
+
+pub fn decode_bmp(Bytes) -> Image raise Failure
+
+pub fn decode_by_format(Bytes, ImageFormat) -> Image raise Failure
+
+pub fn decode_gif(Bytes) -> Image raise Failure
+
+pub fn decode_gif_all(Bytes) -> AnimatedImage raise Failure
+
+pub fn decode_jpeg(Bytes) -> Image raise Failure
+
+pub fn decode_png(Bytes) -> Image raise Failure
+
+pub fn decode_qoi(Bytes) -> Image raise Failure
+
+pub fn decode_tga(Bytes) -> Image raise Failure
+
+pub fn detect_format(Bytes) -> ImageFormat?
+
+pub fn encode(Image, ImageFormat) -> Bytes raise Failure
+
+pub fn encode_bmp(Image) -> Bytes raise Failure
+
+pub fn encode_qoi(Image) -> Bytes raise Failure
+
+pub fn image_dimensions(Bytes) -> (Int, Int, ImageFormat) raise Failure
+
+pub fn image_format_name(ImageFormat) -> String
+
+pub fn is_supported_format(Bytes) -> Bool
+
+pub fn jpeg_dimensions(Bytes) -> (Int, Int) raise Failure
+
+pub fn pixel_format_name(PixelFormat) -> String
+
+// Errors
+
+// Types and methods
+pub struct AnimatedImage {
+  frames : Array[Image]
+  delays : Array[Int]
+  width : Int
+  height : Int
+  loop_count : Int
+}
+pub fn AnimatedImage::frame_count(Self) -> Int
+pub fn AnimatedImage::new(Array[Image], Array[Int], Int, Int, Int) -> Self
+
+pub struct Color {
+  r : Int
+  g : Int
+  b : Int
+  a : Int
+}
+pub fn Color::blend(Self, Self) -> Self
+pub fn Color::blend_alpha(Self, Self, Int) -> Self
+pub fn Color::default() -> Self
+pub fn Color::distance(Self, Self) -> Int
+pub fn Color::from_gray(Int) -> Self
+pub fn Color::from_hsl(Int, Int, Int) -> Self
+pub fn Color::from_hsv(Int, Int, Int) -> Self
+pub fn Color::from_rgb(Int, Int, Int) -> Self
+pub fn Color::invert(Self) -> Self
+pub fn Color::lerp(Self, Self, Int) -> Self
+pub fn Color::new(Int, Int, Int, Int) -> Self
+pub fn Color::to_gray(Self) -> Int
+pub fn Color::to_hsl(Self) -> (Int, Int, Int)
+pub fn Color::to_hsv(Self) -> (Int, Int, Int)
+pub fn Color::with_alpha(Self, Int) -> Self
+
+pub struct Image {
+  width : Int
+  height : Int
+  format : PixelFormat
+  data : Bytes
+}
+pub fn Image::average_color(Self) -> Color
+pub fn Image::brighten(Self, Int) -> Self
+pub fn Image::bytes_per_pixel(Self) -> Int
+pub fn Image::crop(Self, Int, Int, Int, Int) -> Self raise Failure
+pub fn Image::data_size(Self) -> Int
+pub fn Image::flip_horizontal(Self) -> Self
+pub fn Image::flip_vertical(Self) -> Self
+pub fn Image::get_pixel(Self, Int, Int) -> Color
+pub fn Image::histogram(Self) -> Array[Int]
+pub fn Image::new(Int, Int, PixelFormat, Bytes) -> Self
+pub fn Image::resize_bilinear(Self, Int, Int) -> Self
+pub fn Image::resize_nearest(Self, Int, Int) -> Self
+pub fn Image::rotate_180(Self) -> Self
+pub fn Image::rotate_270(Self) -> Self
+pub fn Image::rotate_90(Self) -> Self
+pub fn Image::stride(Self) -> Int
+pub fn Image::to_grayscale(Self) -> Self
+pub fn Image::to_rgba8(Self) -> Self
+
+pub enum ImageFormat {
+  BMP
+  QOI
+  TGA
+  PNG
+  GIF
+  JPEG
+}
+
+pub enum PixelFormat {
+  Gray8
+  GrayA8
+  RGB8
+  RGBA8
+}
+
+// Type aliases
+
+// Traits
+
