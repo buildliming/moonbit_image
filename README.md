@@ -108,17 +108,22 @@ shunge/image
 ├── tga.mbt                    # TGA decoder
 ├── png.mbt                    # PNG decoder + DEFLATE decompressor
 ├── gif.mbt                    # GIF decoder + LZW decompressor
-├── jpeg.mbt                   # JPEG baseline decoder (DCT/IDCT)
-├── jpeg_real_test.mbt         # Real-world JPEG photo decoding tests (11 photos)
-├── fuzz_test.mbt               # Fuzz testing (random bytes → decoders)
-├── roundtrip_test.mbt           # Round-trip encode/decode tests
-├── image_test.mbt               # Core tests: format-specific decoders + error paths
+├── jpeg.mbt                   # JPEG baseline decoder (DCT/IDCT/Huffman)
+├── color.mbt                  # IDCT, YCbCr→RGB color conversion
+├── transform.mbt              # Image transform utilities (crop/flip/resize/rotate)
+├── bmp_writer.mbt             # BMP encoder
+├── qoi_writer.mbt             # QOI encoder
+├── jpeg_real_test.mbt         # Real-world JPEG photo tests (11 real photos)
+├── fuzz_test.mbt              # Fuzz testing (random bytes → decoders)
+├── roundtrip_test.mbt         # Round-trip encode/decode tests
+├── image_test.mbt             # Core tests: format-specific decoders + error paths
 ├── medium_image_test.mbt      # Medium-size tests: 64×64 images
 ├── complex_image_test.mbt     # Complex pattern tests: 128×128 checkerboard, noise, Mandelbrot
 ├── comprehensive_test.mbt     # Comprehensive tests: GIF/JPEG features, animated GIF, error handling
 ├── example/                   # CLI example: image_info
+├── tools/                     # Test generation scripts
 ├── ARTICLE.md                 # Technical article: hand-writing DEFLATE in MoonBit
-└── test_images/               # Generated test images (64/128/256/512/2048 px)
+└── test_images/               # Generated test images (64/128/256/512/2048 px + real photos)
 ```
 
 ## Supported BMP Features
