@@ -192,9 +192,11 @@ shunge/image
 
 - JPEG progressive mode (baseline only)
 - 16-bit per channel depth (currently 8-bit only)
+- Lossless JPEG support
+- Arithmetic coding in JPEG
 - Ancillary chunk parsing (gAMA, cHRM, sRGB, etc.)
 - Streaming/incremental decode
-- Image encoders (write/save support)
+- Image encoders for PNG/JPEG/GIF/TGA (BMP and QOI encoding available)
 
 ## License
 
