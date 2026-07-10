@@ -119,15 +119,15 @@ shunge/image
 ├── image_test.mbt             # Core tests: format-specific decoders + error paths
 ├── medium_image_test.mbt      # Medium-size tests: 64×64 images
 ├── complex_image_test.mbt     # Complex pattern tests: 128×128 checkerboard, noise, Mandelbrot
-├── comprehensive_test.mbt     # Comprehensive tests: GIF/JPEG features, animated GIF, error handling
+├── comprehensive_test.mbt     # Comprehensive tests: GIF/JPEG features, animated GIF, errors
 ├── fuzz_test.mbt              # Fuzz testing (random bytes → decoders, must not crash)
 ├── roundtrip_test.mbt         # Round-trip encode/decode tests
-├── jpeg_real_test.mbt         # Real-world JPEG photo tests (11 real photos, decode_jpeg)
+├── jpeg_real_test.mbt         # Real JPEG photo tests (11 photos, decode_jpeg verification)
 │
 ├── example/                   # CLI example: image_info
-├── tools/                     # Test generation scripts
-├── test_images/               # Test images (64/128/256/512/2048 px + real photos)
-├── ARTICLE.md                 # Technical article: hand-writing DEFLATE in MoonBit
+├── tools/                     # Test image generation scripts
+├── test_images/               # Test images (up to 2048×2048 + real photos)
+├── ARTICLE.md                 # Article: hand-writing DEFLATE in MoonBit
 └── LICENSE                    # MIT
 ```
 
