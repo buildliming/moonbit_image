@@ -109,7 +109,10 @@ shunge/image
 ├── png.mbt                    # PNG decoder + DEFLATE decompressor
 ├── gif.mbt                    # GIF decoder + LZW decompressor
 ├── jpeg.mbt                   # JPEG baseline decoder (DCT/IDCT)
-├── image_test.mbt             # Core tests: format-specific decoders + error paths
+├── jpeg_real_test.mbt         # Real-world JPEG photo decoding tests (11 photos)
+├── fuzz_test.mbt               # Fuzz testing (random bytes → decoders)
+├── roundtrip_test.mbt           # Round-trip encode/decode tests
+├── image_test.mbt               # Core tests: format-specific decoders + error paths
 ├── medium_image_test.mbt      # Medium-size tests: 64×64 images
 ├── complex_image_test.mbt     # Complex pattern tests: 128×128 checkerboard, noise, Mandelbrot
 ├── comprehensive_test.mbt     # Comprehensive tests: GIF/JPEG features, animated GIF, error handling
@@ -189,17 +192,21 @@ MIT
 
 ## Testing
 
-The project includes 71 tests across 3 test files:
+The project includes 108 tests across 6 test files:
 
 ```bash
-moon test   # Run all 71 tests
+moon test   # Run all 108 tests
 ```
 
 Tests cover:
-- **Small images** (2×2 ~ 8×8): format-specific decoder correctness
-- **Medium images** (64×64): full pixel checksum verification for all 4 formats
-- **Complex patterns** (128×128): checkerboard, noise, radial gradient, Mandelbrot fractal — stresses DEFLATE compression, RLE, Huffman decoding under diverse data patterns
-- **Error handling**: truncated data, invalid magic bytes, unsupported parameters, RLE overflow, CRC mismatches
+- **Basic decoding** (2×2 ~ 16×16): format-specific decoder correctness for BMP/TGA/QOI/PNG/GIF/JPEG
+- **Error handling** (14 tests): truncated data, invalid magic bytes, CRC mismatches, corrupted streams
+- **Fuzz testing** (9 tests): random byte sequences fed to each decoder — must not crash
+- **Round-trip tests** (17 tests): encode → decode → verify identity for BMP/QOI/TGA
+- **Medium images** (64×64): full pixel checksum verification for BMP/TGA/PNG/QOI
+- **Complex patterns** (128×128): checkerboard, noise, radial gradient, Mandelbrot fractal — stresses DEFLATE, RLE, and Huffman decoding
+- **Comprehensive format tests** (20 tests): PNG filters, multi-IDAT, Adam7, GIF interlace/transparency/animation, JPEG subsampling
+- **Real photo JPEG tests** (11 tests): `decode_jpeg()` on embedded JPEG thumbnails of real-world photos (1080p–1706px) with pixel-accurate checksums
 - **Large images** (up to 2048×2048): verified via Python/PIL reference decoder
 
 ## Contributing
