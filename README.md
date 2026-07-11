@@ -123,6 +123,7 @@ shunge/image
 ├── fuzz_test.mbt              # Fuzz testing (random bytes → decoders, must not crash)
 ├── roundtrip_test.mbt         # Round-trip encode/decode tests
 ├── jpeg_real_test.mbt         # Real JPEG photo tests (11 photos, decode_jpeg verification)
+├── real_photo_test.mbt         # Real photo tests: BMP/PNG/TGA/QOI/GIF (54 multi-format tests)
 │
 ├── example/                   # CLI example: image_info
 ├── tools/                     # Test image generation scripts
@@ -204,10 +205,10 @@ MIT
 
 ## Testing
 
-The project includes 108 tests across 6 test files:
+The project includes 162 tests across 7 test files:
 
 ```bash
-moon test   # Run all 108 tests
+moon test   # Run all 162 tests
 ```
 
 Tests cover:
@@ -218,7 +219,7 @@ Tests cover:
 - **Medium images** (64×64): full pixel checksum verification for BMP/TGA/PNG/QOI
 - **Complex patterns** (128×128): checkerboard, noise, radial gradient, Mandelbrot fractal — stresses DEFLATE, RLE, and Huffman decoding
 - **Comprehensive format tests** (20 tests): PNG filters, multi-IDAT, Adam7, GIF interlace/transparency/animation, JPEG subsampling
-- **Real photo JPEG tests** (11 tests): `decode_jpeg()` on embedded JPEG thumbnails of real-world photos (1080p–1706px) with pixel-accurate checksums
+- **Real photo tests** (65 tests): embedded real-world photo thumbnails, verified via `decode_bmp()` / `decode_png()` / `decode_tga()` / `decode_qoi()` / `decode_gif()` / `decode_jpeg()` with pixel-accurate checksums. Covers landscape, realistic, complex, blurry, and texture photos (1080p–3840px originals)
 - **Large images** (up to 2048×2048): verified via Python/PIL reference decoder
 
 ## Contributing
