@@ -272,6 +272,16 @@ pub fn image_format_name(format : ImageFormat) -> String {
   }
 }
 
+///|
+/// Check if a format supports encoding (write/save)
+pub fn is_encode_supported(format : ImageFormat) -> Bool {
+  match format {
+    ImageFormat::BMP => true
+    ImageFormat::QOI => true
+    _ => false
+  }
+}
+
 //-----------------------------------------------------------------------------
 // Unified Encode API
 //-----------------------------------------------------------------------------
