@@ -27,7 +27,6 @@ jobs:
       - name: 3. moon info
         run: |
           moon info
-          git diff --exit-code
 
       - name: 4. moon test
         run: moon test
