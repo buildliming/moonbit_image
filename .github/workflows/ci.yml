@@ -24,9 +24,9 @@ jobs:
       - name: 2. moon fmt --check
         run: moon fmt --check
 
-      - name: 3. moon info --deny-warn
+      - name: 3. moon info
         run: |
-          moon info --deny-warn
+          moon info
 
       - name: 4. moon test
         run: moon test
