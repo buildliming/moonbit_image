@@ -9,7 +9,7 @@ A comprehensive image decoding library written entirely in MoonBit, supporting m
 | **BMP** | ✅ Complete | 1/4/8/24/32-bit, top-down & bottom-up |
 | **QOI** | ✅ Complete | RGB & RGBA, full spec compliance |
 | **TGA** | ✅ Complete | Uncompressed & RLE, 8/16/24/32-bit |
-| **PNG** | ✅ Complete | 8-bit grayscale/RGB/RGBA, indexed, Adam7, full DEFLATE |
+| **PNG** | ✅ Complete | 1/2/4/8/16-bit input, grayscale/RGB/RGBA/indexed, tRNS, Adam7, full DEFLATE |
 | **GIF** | ✅ Complete | GIF87a/89a, LZW decompression, interlace, transparency |
 | **JPEG** | ✅ Baseline | Grayscale + YCbCr color, DCT/IDCT, Huffman |
 
@@ -160,15 +160,24 @@ shunge/image
 
 ## Supported PNG Features
 
-- 8-bit depth: grayscale, RGB, RGBA, grayscale+alpha, indexed color (PLTE)
+- All standard color/depth combinations: grayscale (1/2/4/8/16-bit), indexed (1/2/4/8-bit), RGB/RGBA/grayscale+alpha (8/16-bit)
+- Packed grayscale samples expand to Gray8; 16-bit samples use their high byte to fit the existing 8-bit pixel formats
+- tRNS transparency for grayscale, RGB and indexed images, including partial palette alpha tables; transparent colors are compared at original precision
 - Full DEFLATE decompression (RFC 1951)
   - Uncompressed blocks (BTYPE=0)
   - Fixed Huffman codes (BTYPE=1)
   - Dynamic Huffman codes (BTYPE=2)
 - All five PNG filter types: None, Sub, Up, Average, Paeth
-- zlib wrapper (RFC 1950) with header verification
-- CRC32 chunk integrity checking
-- Adam7 interlaced images
+- zlib wrapper (RFC 1950) with header, window-size and Adler32 verification
+- Multiple DEFLATE blocks with preserved bit alignment and cross-block back-references
+- CRC32 verification for critical chunks and tRNS, chunk ordering/length checks, and palette index validation
+- Adam7 interlaced images at every supported depth, including narrow images and empty passes
+- Checked image/scanline sizes and decompression bounded by the expected filtered image size
+
+PNG decoding preserves the public API. Grayscale images with tRNS output GrayA8,
+RGB images with tRNS output RGBA8, and indexed images always output RGBA8.
+16-bit input is decoded to 8-bit output; retaining 16-bit sample precision requires
+a future extension to PixelFormat. Color management and APNG animation are not implemented.
 
 ## Supported GIF Features
 
@@ -192,7 +201,7 @@ shunge/image
 ### Limitations (Future Work)
 
 - JPEG progressive mode (baseline only)
-- 16-bit per channel depth (currently 8-bit only)
+- Preserving 16-bit PNG output precision (PNG input is supported and reduced to 8-bit samples)
 - Lossless JPEG support
 - Arithmetic coding in JPEG
 - Ancillary chunk parsing (gAMA, cHRM, sRGB, etc.)
@@ -205,11 +214,15 @@ MIT
 
 ## Testing
 
-The project includes 162 tests across 7 test files:
+The suite contains 306 tests, including 140 PNG regressions. Run all tests with:
 
 ```bash
-moon test   # Run all 162 tests
+moon test
 ```
+
+With MoonBit toolchains that report warning 25 (`test_unqualified_package`) for
+the existing test files, use `moon check --deny-warn --warn-list '-25'` and
+`moon test --warn-list '-25'`. The PNG regression files use explicit package imports.
 
 Tests cover:
 - **Basic decoding** (2×2 ~ 16×16): format-specific decoder correctness for BMP/TGA/QOI/PNG/GIF/JPEG
@@ -219,8 +232,22 @@ Tests cover:
 - **Medium images** (64×64): full pixel checksum verification for BMP/TGA/PNG/QOI
 - **Complex patterns** (128×128): checkerboard, noise, radial gradient, Mandelbrot fractal — stresses DEFLATE, RLE, and Huffman decoding
 - **Comprehensive format tests** (20 tests): PNG filters, multi-IDAT, Adam7, GIF interlace/transparency/animation, JPEG subsampling
+- **PNG regressions**: exact output bytes for all color/depth combinations, row padding, Adam7 and tRNS; malformed chunks, Huffman streams, block boundaries and decompression limits
 - **Real photo tests** (65 tests): embedded real-world photo thumbnails, verified via `decode_bmp()` / `decode_png()` / `decode_tga()` / `decode_qoi()` / `decode_gif()` / `decode_jpeg()` with pixel-accurate checksums. Covers landscape, realistic, complex, blurry, and texture photos (1080p–3840px originals)
 - **Large images** (up to 2048×2048): verified via Python/PIL reference decoder
+
+The PNG pixel and DEFLATE fixtures are independently generated using Python's
+standard library. Regenerate them with:
+
+```bash
+python tools/generate_png_regression_fixtures.py
+python tools/generate_png_deflate_fixtures.py
+moon fmt
+```
+
+PNG behavior follows the [W3C PNG specification](https://www.w3.org/TR/png-3/),
+[RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) and
+[RFC 1951](https://www.rfc-editor.org/rfc/rfc1951).
 
 ## Contributing
 

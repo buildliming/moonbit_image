@@ -1,5 +1,5 @@
 // Copyright (c) 2025 lws
-// PNG decoder - Stage 1: Huffman tree for DEFLATE
+// PNG decoder with DEFLATE, transparency and Adam7 support
 
 //-----------------------------------------------------------------------------
 // Huffman Tree for DEFLATE (RFC 1951)
@@ -31,7 +31,7 @@ fn build_huffman(cl : Array[Int], ns : Int) -> HDecoder {
     }
   }
   if ml == 0 {
-    return { table: Array::make(1, { symbol: -1, length: 0 }), tbl_bits: 0 }
+    return { table: Array::make(1, { symbol: -1, length: 0, }), tbl_bits: 0, }
   }
 
   // Count codes per length (RFC 1951 §3.2.2)
@@ -55,7 +55,7 @@ fn build_huffman(cl : Array[Int], ns : Int) -> HDecoder {
   // Kraft inequality guarantees all 2^ml entries are filled for complete Huffman trees
   let tb = ml
   let ts = 1 << tb
-  let tbl = Array::make(ts, { symbol: -1, length: 0 })
+  let tbl = Array::make(ts, { symbol: -1, length: 0, })
 
   for i = 0; i < ns; i = i + 1 {
     let l = cl[i]
@@ -65,12 +65,53 @@ fn build_huffman(cl : Array[Int], ns : Int) -> HDecoder {
       let base = a << (tb - l)
       let step = 1 << (tb - l)
       for j = 0; j < step && base + j < ts; j = j + 1 {
-        tbl[base + j] = { symbol: i, length: l }
+        tbl[base + j] = { symbol: i, length: l, }
       }
     }
   }
 
-  { table: tbl, tbl_bits: tb }
+  { table: tbl, tbl_bits: tb, }
+}
+
+///|
+/// Validate dynamic trees before constructing the lookup table.
+/// A single one-bit code is allowed for literal/distance alphabets, and
+/// an empty distance alphabet is allowed for blocks containing only literals.
+fn checked_huffman(
+  cl : Array[Int],
+  ns : Int,
+  allow_single : Bool,
+  allow_empty : Bool,
+) -> HDecoder raise Failure {
+  let counts = Array::make(16, 0)
+  let mut max_length = 0
+  for i = 0; i < ns; i = i + 1 {
+    let length = cl[i]
+    if length < 0 || length > 15 {
+      raise Failure::Failure("DEFLATE: invalid code length")
+    }
+    counts[length] = counts[length] + 1
+    if length > max_length {
+      max_length = length
+    }
+  }
+  if max_length == 0 {
+    if !allow_empty {
+      raise Failure::Failure("DEFLATE: empty Huffman tree")
+    }
+    return build_huffman(cl, ns)
+  }
+  let mut remaining = 1
+  for length = 1; length <= 15; length = length + 1 {
+    remaining = (remaining << 1) - counts[length]
+    if remaining < 0 {
+      raise Failure::Failure("DEFLATE: oversubscribed Huffman tree")
+    }
+  }
+  if remaining > 0 && !(allow_single && max_length == 1) {
+    raise Failure::Failure("DEFLATE: incomplete Huffman tree")
+  }
+  build_huffman(cl, ns)
 }
 
 ///|
@@ -187,25 +228,28 @@ fn ensure_bits(
   buf : Int,
   cnt : Int,
   need : Int,
-) -> (BitReader, Int, Int) {
+) -> (BitReader, Int, Int) raise Failure {
   let mut xr = r
   let mut xb = buf
   let mut xc = cnt
   while xc < need {
-    // Read up to 16 bits at once
-    let to_read = if need - xc > 16 { 16 } else { need - xc }
-    try {
-      let (nr, val) = xr.read_bits(to_read)
-      xr = nr
-      xb = xb | (val << xc)
-      xc = xc + to_read
-    } catch {
-      _ =>
-        // End of bit stream (e.g., final block with padding).
-        // Return whatever we have; the caller will detect insufficient bits
-        // via clen > bc or similar checks.
-        break
+    if xr.byte_pos >= xr.data.length() {
+      break
     }
+    // Never request more bits than remain: read_bits is atomic on failure,
+    // so a failed wide lookahead must not discard a valid short final code.
+    let mut to_read = if need - xc > 16 { 16 } else { need - xc }
+    let remaining_bytes = xr.data.length() - xr.byte_pos
+    if remaining_bytes <= 2 {
+      let available = remaining_bytes * 8 - xr.bit_pos
+      if to_read > available {
+        to_read = available
+      }
+    }
+    let (nr, val) = xr.read_bits(to_read)
+    xr = nr
+    xb = xb | (val << xc)
+    xc = xc + to_read
   }
   (xr, xb, xc)
 }
@@ -219,13 +263,29 @@ fn consume(b : Int, c : Int, n : Int) -> (Int, Int, Int) {
   (nb, nc, v)
 }
 
+///|
+/// Put lookup bits back before reading the next block or the zlib trailer.
+fn rewind_bits(r : BitReader, count : Int) -> BitReader {
+  let back = count - r.bit_pos
+  if back <= 0 {
+    { data: r.data, byte_pos: r.byte_pos, bit_pos: -back, }
+  } else {
+    let bytes = (back + 7) / 8
+    { data: r.data, byte_pos: r.byte_pos - bytes, bit_pos: bytes * 8 - back, }
+  }
+}
+
 //-----------------------------------------------------------------------------
 // DEFLATE Decompressor (RFC 1951)
 //-----------------------------------------------------------------------------
 
 ///|
-/// Decompress DEFLATE-formatted data (pure DEFLATE, no zlib wrapper)
-fn deflate_decompress(data : Bytes) -> Bytes raise Failure {
+/// Return the byte offset after the final block's padding for zlib framing.
+fn deflate_decompress_stream(
+  data : Bytes,
+  max_output : Int,
+  window_size : Int,
+) -> (Bytes, Int) raise Failure {
   let mut r = BitReader::new(data)
   let out = Buffer()
   let mut fb = false
@@ -249,25 +309,32 @@ fn deflate_decompress(data : Bytes) -> Bytes raise Failure {
       if (len ^ nlen) != 0xFFFF {
         raise Failure::Failure("DEFLATE: bad uncomp len")
       }
+      if len > max_output - out.length() {
+        raise Failure::Failure("DEFLATE: output exceeds image data size")
+      }
       let (r_ld, ld) = r.read_bytes(len)
       r = r_ld
       out.write_bytes(ld)
     } else if bt == 1 {
       // BTYPE=1: Fixed Huffman codes
-      let (r2, _, _) = decode_block(r, out, fxl, fxd, 0, 0)
-      r = r2
+      let (r2, _, count) = decode_block(
+        r, out, fxl, fxd, 0, 0, max_output, window_size,
+      )
+      r = rewind_bits(r2, count)
     } else if bt == 2 {
       // BTYPE=2: Dynamic Huffman codes
       let (r_dyn, bb_dyn, bc_dyn, lt, dt) = read_dyn_header(r)
       r = r_dyn
-      let (r2, _, _) = decode_block(r, out, lt, dt, bb_dyn, bc_dyn)
-      r = r2
+      let (r2, _, count) = decode_block(
+        r, out, lt, dt, bb_dyn, bc_dyn, max_output, window_size,
+      )
+      r = rewind_bits(r2, count)
     } else {
       raise Failure::Failure("DEFLATE: bad btype")
     }
   }
 
-  out.to_bytes()
+  (out.to_bytes(), r.align_to_byte().byte_pos)
 }
 
 ///|
@@ -280,24 +347,19 @@ fn decode_block(
   dt : HDecoder,
   bb0 : Int,
   bc0 : Int,
+  max_output : Int,
+  window_size : Int,
 ) -> (BitReader, Int, Int) raise Failure {
   let mut xr = r
   let mut bb = bb0
   let mut bc = bc0
   let lb = huff_bits(lt)
   let db = huff_bits(dt)
-  let ml = if lb > db { lb } else { db }
   let mut done = false
 
   while !done {
-    // Ensure enough bits for a literal/length symbol.
-    // When the stream is exhausted (e.g., after the final block's padding),
-    // ensure_bits returns with ec=0; treat this as normal end-of-block.
-    let (nr, eb, ec) = ensure_bits(xr, bb, bc, ml)
-    if ec == 0 {
-      done = true
-      continue
-    }
+    // Short codes may end before the table's full lookahead width.
+    let (nr, eb, ec) = ensure_bits(xr, bb, bc, lb)
     xr = nr
     bb = eb
     bc = ec
@@ -312,6 +374,9 @@ fn decode_block(
 
     if sym < 256 {
       // Literal byte
+      if out.length() >= max_output {
+        raise Failure::Failure("DEFLATE: output exceeds image data size")
+      }
       out.write_byte(sym.to_byte())
     } else if sym == 256 {
       // End of block
@@ -329,6 +394,9 @@ fn decode_block(
         xr = nr2
         bb = eb2
         bc = ec2
+        if bc < ex {
+          raise Failure::Failure("DEFLATE: truncated length")
+        }
         let (nb2, nc2, ev) = consume(bb, bc, ex)
         bb = nb2
         bc = nc2
@@ -358,6 +426,9 @@ fn decode_block(
         xr = nr4
         bb = eb4
         bc = ec4
+        if bc < dex {
+          raise Failure::Failure("DEFLATE: truncated distance")
+        }
         let (nb4, nc4, ev) = consume(bb, bc, dex)
         bb = nb4
         bc = nc4
@@ -366,8 +437,11 @@ fn decode_block(
 
       // LZ77 back-reference copy
       let ol = out.length()
-      if dist > ol {
+      if dist > ol || dist > window_size {
         raise Failure::Failure("DEFLATE: dist>len")
+      }
+      if length > max_output - ol {
+        raise Failure::Failure("DEFLATE: output exceeds image data size")
       }
       let cs = ol - dist
       if dist >= length {
@@ -410,6 +484,9 @@ fn read_dyn_header(
   xr = nr
   bb = nb
   bc = nc
+  if bc < 14 {
+    raise Failure::Failure("DEFLATE: truncated dynamic header")
+  }
   let (b1, c1, hl) = consume(bb, bc, 5)
   let (b2, c2, hd) = consume(b1, c1, 5)
   let (b3, c3, hc) = consume(b2, c2, 4)
@@ -420,7 +497,7 @@ fn read_dyn_header(
   let nd = hd + 1
   let ncl = hc + 4
 
-  if nl > 286 || nd > 30 {
+  if nl > 286 {
     raise Failure::Failure("DEFLATE: too many codes")
   }
 
@@ -431,6 +508,9 @@ fn read_dyn_header(
     xr = nr2
     bb = eb2
     bc = ec2
+    if bc < 3 {
+      raise Failure::Failure("DEFLATE: truncated code lengths")
+    }
     let (nb2, nc2, len) = consume(bb, bc, 3)
     bb = nb2
     bc = nc2
@@ -438,7 +518,7 @@ fn read_dyn_header(
   }
 
   // Build code length Huffman tree and decode literal/distance code lengths
-  let clt = build_huffman(cll, 19)
+  let clt = checked_huffman(cll, 19, false, false)
   let cls = Array::make(nl + nd, 0)
   let mut i = 0
 
@@ -448,7 +528,7 @@ fn read_dyn_header(
     bb = eb3
     bc = ec3
     let (sym, cl) = huff_decode(clt, bb & ((1 << huff_bits(clt)) - 1))
-    if cl == 0 {
+    if cl == 0 || cl > bc {
       raise Failure::Failure("DEFLATE: bad cl code")
     }
     let (nb3, nc3, _) = consume(bb, bc, cl)
@@ -467,12 +547,18 @@ fn read_dyn_header(
       xr = nr4
       bb = eb4
       bc = ec4
+      if bc < 2 {
+        raise Failure::Failure("DEFLATE: truncated repeat")
+      }
       let (nb4, nc4, ex) = consume(bb, bc, 2)
       bb = nb4
       bc = nc4
       let rp = ex + 3
       let pv = cls[i - 1]
-      for j = 0; j < rp && i < nl + nd; j = j + 1 {
+      if rp > nl + nd - i {
+        raise Failure::Failure("DEFLATE: repeat exceeds code lengths")
+      }
+      for j = 0; j < rp; j = j + 1 {
         cls[i] = pv
         i = i + 1
       }
@@ -482,11 +568,17 @@ fn read_dyn_header(
       xr = nr5
       bb = eb5
       bc = ec5
+      if bc < 3 {
+        raise Failure::Failure("DEFLATE: truncated repeat")
+      }
       let (nb5, nc5, ex) = consume(bb, bc, 3)
       bb = nb5
       bc = nc5
       let rp = ex + 3
-      for j = 0; j < rp && i < nl + nd; j = j + 1 {
+      if rp > nl + nd - i {
+        raise Failure::Failure("DEFLATE: repeat exceeds code lengths")
+      }
+      for j = 0; j < rp; j = j + 1 {
         cls[i] = 0
         i = i + 1
       }
@@ -496,11 +588,17 @@ fn read_dyn_header(
       xr = nr6
       bb = eb6
       bc = ec6
+      if bc < 7 {
+        raise Failure::Failure("DEFLATE: truncated repeat")
+      }
       let (nb6, nc6, ex) = consume(bb, bc, 7)
       bb = nb6
       bc = nc6
       let rp = ex + 11
-      for j = 0; j < rp && i < nl + nd; j = j + 1 {
+      if rp > nl + nd - i {
+        raise Failure::Failure("DEFLATE: repeat exceeds code lengths")
+      }
+      for j = 0; j < rp; j = j + 1 {
         cls[i] = 0
         i = i + 1
       }
@@ -517,7 +615,16 @@ fn read_dyn_header(
     dla[j] = cls[nl + j]
   }
 
-  (xr, bb, bc, build_huffman(lla, nl), build_huffman(dla, nd))
+  if lla[256] == 0 {
+    raise Failure::Failure("DEFLATE: missing end-of-block code")
+  }
+  (
+    xr,
+    bb,
+    bc,
+    checked_huffman(lla, nl, true, false),
+    checked_huffman(dla, nd, true, true),
+  )
 }
 
 //-----------------------------------------------------------------------------
@@ -527,7 +634,10 @@ fn read_dyn_header(
 ///|
 /// Decompress zlib-wrapped DEFLATE data
 /// zlib format: 2-byte header (CMF+FLG) + DEFLATE stream + 4-byte Adler32
-fn zlib_decompress(data : Bytes) -> Bytes raise Failure {
+fn zlib_decompress(
+  data : Bytes,
+  max_output? : Int = 0x7FFFFFFF,
+) -> Bytes raise Failure {
   if data.length() < 6 {
     raise Failure::Failure("zlib: data too short")
   }
@@ -535,7 +645,7 @@ fn zlib_decompress(data : Bytes) -> Bytes raise Failure {
   // CMF (Compression Method and Flags)
   let cmf = data[0].to_int()
   let cm = cmf & 0x0F // Compression method
-  let _cinfo = cmf >> 4 // Compression info (window size)
+  let cinfo = cmf >> 4 // Compression info (window size)
 
   // FLG (Flags)
   let flg = data[1].to_int()
@@ -550,6 +660,12 @@ fn zlib_decompress(data : Bytes) -> Bytes raise Failure {
   if cm != 8 {
     raise Failure::Failure("zlib: unsupported compression method: \{cm}")
   }
+  if cinfo > 7 {
+    raise Failure::Failure("zlib: invalid window size")
+  }
+  if max_output < 0 {
+    raise Failure::Failure("zlib: invalid output limit")
+  }
 
   // Check for preset dictionary (FDICT flag)
   let fdict = (flg >> 5) & 1
@@ -557,17 +673,21 @@ fn zlib_decompress(data : Bytes) -> Bytes raise Failure {
     raise Failure::Failure("zlib: preset dictionary not supported")
   }
 
-  // Extract DEFLATE stream (skip 2-byte header, skip 4-byte Adler32 trailer)
-  let deflate_data = data[2:data.length() - 4].to_owned()
-
-  // Decompress
-  let result = deflate_decompress(deflate_data)
-
-  // Verify Adler32 (last 4 bytes of zlib stream, big-endian)
-  let expected_adler = (data[data.length() - 4].to_int() << 24) |
-    (data[data.length() - 3].to_int() << 16) |
-    (data[data.length() - 2].to_int() << 8) |
-    data[data.length() - 1].to_int()
+  // Locate the trailer from the final block rather than the input's end.
+  // PNG permits unused bytes after the zlib stream in the final IDAT chunk.
+  let (result, consumed) = deflate_decompress_stream(
+    data[2:].to_owned(),
+    max_output,
+    1 << (cinfo + 8),
+  )
+  let trailer = 2 + consumed
+  if trailer > data.length() - 4 {
+    raise Failure::Failure("zlib: truncated Adler32 checksum")
+  }
+  let expected_adler = (data[trailer].to_int() << 24) |
+    (data[trailer + 1].to_int() << 16) |
+    (data[trailer + 2].to_int() << 8) |
+    data[trailer + 3].to_int()
   let actual_adler = adler32(result)
   if actual_adler != expected_adler {
     raise Failure::Failure("zlib: Adler32 checksum mismatch")
@@ -701,7 +821,7 @@ fn apply_filter(
 }
 
 //-----------------------------------------------------------------------------
-// PNG Decoder (non-interlaced, 8-bit grayscale/RGB/RGBA)
+// PNG Decoder (all standard color types and depths, including Adam7)
 //-----------------------------------------------------------------------------
 
 ///|
@@ -733,7 +853,7 @@ fn chunk_is(b : Bytes, c0 : Byte, c1 : Byte, c2 : Byte, c3 : Byte) -> Bool {
 }
 
 ///|
-/// Bytes per pixel for a given color type (at 8-bit depth)
+/// Samples per pixel for a given color type
 fn png_spp(ct : Int) -> Int {
   match ct {
     0 => 1
@@ -747,12 +867,17 @@ fn png_spp(ct : Int) -> Int {
 ///|
 /// Output PixelFormat for a given color type
 /// Indexed color outputs RGBA8 after palette expansion
-fn out_fmt(ct : Int) -> PixelFormat {
+fn out_fmt(ct : Int, transparent : Bool) -> PixelFormat {
   match ct {
-    PC_GRAY => PixelFormat::Gray8
+    PC_GRAY =>
+      if transparent {
+        PixelFormat::GrayA8
+      } else {
+        PixelFormat::Gray8
+      }
     PC_IDX => PixelFormat::RGBA8
     PC_GA => PixelFormat::GrayA8
-    PC_RGB => PixelFormat::RGB8
+    PC_RGB => if transparent { PixelFormat::RGBA8 } else { PixelFormat::RGB8 }
     PC_RGBA => PixelFormat::RGBA8
     _ => PixelFormat::RGBA8
   }
@@ -790,6 +915,8 @@ fn a7dims(w : Int, h : Int, pass : Int) -> (Int, Int) {
 
 ///|
 /// Decode a PNG image from raw bytes
+/// Samples are returned in an 8-bit PixelFormat; 16-bit samples use their high byte.
+/// tRNS adds alpha to grayscale/RGB output and supplies indexed palette alpha.
 pub fn decode_png(data : Bytes) -> Image raise Failure {
   // Verify PNG signature
   if data.length() < 8 {
@@ -809,11 +936,17 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
   let mut il : Int = 0
   let cd = Buffer()
   let mut hi = false // IHDR seen flag
+  let mut has_idat = false
+  let mut idat_ended = false
+  let mut has_iend = false
+  let mut has_palette = false
+  let mut has_trns = false
+  let mut trns : Bytes = b""
   let mut pal = Array::make(0, Color::default())
 
   // Chunk parsing loop
   while pos < data.length() {
-    if pos + 8 > data.length() {
+    if data.length() - pos < 12 {
       raise Failure::Failure("PNG: trunc chunk")
     }
 
@@ -825,8 +958,14 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
     let cbt = data[pos:pos + 4].to_owned()
     pos = pos + 4
 
-    if pos + cl + 4 > data.length() {
+    if cl < 0 || cl > data.length() - pos - 4 {
       raise Failure::Failure("PNG: trunc chunk data")
+    }
+    for i = 0; i < 4; i = i + 1 {
+      let c = cbt[i].to_int()
+      if !((c >= 65 && c <= 90) || (c >= 97 && c <= 122)) {
+        raise Failure::Failure("PNG: bad chunk type")
+      }
     }
 
     // Read chunk data
@@ -837,9 +976,10 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
     let sc = read_u32_be(data, pos)
     pos = pos + 4
 
-    // Verify CRC for critical chunks (uppercase first letter)
+    // Verify critical chunks and transparency data used to produce pixels.
     let is_critical = (cbt[0].to_int() & 32) == 0
-    if is_critical {
+    let it = chunk_is(cbt, b't', b'R', b'N', b'S')
+    if is_critical || it {
       let ccrc = crc32_chunk(cbt, cdat)
       if ccrc != sc {
         raise Failure::Failure("PNG: CRC mismatch")
@@ -850,6 +990,12 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
     let id = chunk_is(cbt, b'I', b'D', b'A', b'T')
     let ie = chunk_is(cbt, b'I', b'E', b'N', b'D')
     let ip = chunk_is(cbt, b'P', b'L', b'T', b'E')
+    if !hi && !ih {
+      raise Failure::Failure("PNG: IHDR must be first")
+    }
+    if has_idat && !id {
+      idat_ended = true
+    }
 
     if ih {
       // IHDR: image header
@@ -864,6 +1010,18 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
       bd = cdat[8].to_int()
       ct = cdat[9].to_int()
       il = cdat[12].to_int()
+      if w <= 0 || h <= 0 {
+        raise Failure::Failure("PNG: bad dims")
+      }
+      let valid = match ct {
+        PC_GRAY => bd == 1 || bd == 2 || bd == 4 || bd == 8 || bd == 16
+        PC_RGB | PC_GA | PC_RGBA => bd == 8 || bd == 16
+        PC_IDX => bd == 1 || bd == 2 || bd == 4 || bd == 8
+        _ => false
+      }
+      if !valid {
+        raise Failure::Failure("PNG: bad color/depth")
+      }
       // Validate compression and filter method
       if cdat[10].to_int() != 0 {
         raise Failure::Failure("PNG: bad comp")
@@ -877,19 +1035,34 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
       hi = true
     } else if id {
       // IDAT: image data
-      if !hi {
-        raise Failure::Failure("PNG: IDAT before IHDR")
+      if idat_ended {
+        raise Failure::Failure("PNG: nonconsecutive IDAT")
       }
+      if ct == PC_IDX && !has_palette {
+        raise Failure::Failure("PNG: missing PLTE")
+      }
+      has_idat = true
       cd.write_bytes(cdat)
     } else if ie {
       // IEND: image end
+      if cl != 0 || !has_idat {
+        raise Failure::Failure("PNG: bad IEND")
+      }
+      has_iend = true
       break
     } else if ip {
       // PLTE: palette
-      if cl % 3 != 0 {
+      if has_palette || has_idat || has_trns || ct == PC_GRAY || ct == PC_GA {
+        raise Failure::Failure("PNG: invalid PLTE placement")
+      }
+      if cl == 0 || cl > 768 || cl % 3 != 0 {
         raise Failure::Failure("PNG: PLTE len")
       }
       let n = cl / 3
+      if ct == PC_IDX && n > 1 << bd {
+        raise Failure::Failure("PNG: palette exceeds bit depth")
+      }
+      has_palette = true
       pal = Array::make(n, Color::default())
       for i = 0; i < n; i = i + 1 {
         let o = i * 3
@@ -900,38 +1073,219 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
           255,
         )
       }
+    } else if it {
+      if has_trns || has_idat {
+        raise Failure::Failure("PNG: invalid tRNS placement")
+      }
+      match ct {
+        PC_GRAY => if cl != 2 { raise Failure::Failure("PNG: tRNS len") }
+        PC_RGB => if cl != 6 { raise Failure::Failure("PNG: tRNS len") }
+        PC_IDX => {
+          if !has_palette || cl > pal.length() {
+            raise Failure::Failure("PNG: tRNS palette len")
+          }
+          for i = 0; i < cl; i = i + 1 {
+            pal[i] = pal[i].with_alpha(cdat[i].to_int())
+          }
+        }
+        _ => raise Failure::Failure("PNG: tRNS with alpha channel")
+      }
+      has_trns = true
+      trns = cdat
+    } else if is_critical {
+      raise Failure::Failure("PNG: unknown critical chunk")
     }
   }
 
   if !hi {
     raise Failure::Failure("PNG: no IHDR")
   }
-  if w <= 0 || h <= 0 {
-    raise Failure::Failure("PNG: bad dims")
+  if !has_idat || !has_iend {
+    raise Failure::Failure("PNG: missing IDAT or IEND")
   }
-
-  // Validate color type + bit depth combination
-  let vok = match ct {
-    PC_GRAY => bd == 1 || bd == 2 || bd == 4 || bd == 8 || bd == 16
-    PC_RGB => bd == 8 || bd == 16
-    PC_IDX => bd == 1 || bd == 2 || bd == 4 || bd == 8
-    PC_GA => bd == 8 || bd == 16
-    PC_RGBA => bd == 8 || bd == 16
-    _ => false
+  let output_bpp = if ct == PC_IDX {
+    4
+  } else {
+    png_spp(ct) + (if has_trns { 1 } else { 0 })
   }
-  if !vok {
-    raise Failure::Failure("PNG: bad color/depth")
+  if w.to_int64() * h.to_int64() > 0x7FFFFFFFL / output_bpp.to_int64() {
+    raise Failure::Failure("PNG: image too large")
   }
-
-  // zlib decompress all IDAT data
-  let dec = zlib_decompress(cd.to_bytes())
+  let expected = png_filtered_size(w, h, bd, ct, il)
+  let dec = zlib_decompress(cd.to_bytes(), max_output=expected)
+  if dec.length() != expected {
+    raise Failure::Failure("PNG: incorrect scanline data length")
+  }
 
   // Decode (interlaced or non-interlaced)
   if il == 1 {
-    decode_a7(w, h, bd, ct, pal, dec)
+    decode_a7(w, h, bd, ct, pal, trns, dec)
   } else {
-    decode_plain(w, h, bd, ct, pal, dec)
+    decode_plain(w, h, bd, ct, pal, trns, dec)
   }
+}
+
+///|
+/// Number of packed bytes in one scanline, without the filter byte.
+fn png_pitch(w : Int, bd : Int, ct : Int) -> Int raise Failure {
+  let pitch = (w.to_int64() * bd.to_int64() * png_spp(ct).to_int64() + 7L) / 8L
+  if pitch >= 0x7FFFFFFFL {
+    raise Failure::Failure("PNG: row too large")
+  }
+  pitch.to_int()
+}
+
+///|
+/// Validate the filtered size before inflating or allocating pixel buffers.
+fn png_filtered_size(
+  w : Int,
+  h : Int,
+  bd : Int,
+  ct : Int,
+  il : Int,
+) -> Int raise Failure {
+  let mut size = 0L
+  if il == 0 {
+    size = (png_pitch(w, bd, ct).to_int64() + 1L) * h.to_int64()
+  } else {
+    for pass = 0; pass < 7; pass = pass + 1 {
+      let (pw, ph) = a7dims(w, h, pass)
+      if pw > 0 && ph > 0 {
+        size = size + (png_pitch(pw, bd, ct).to_int64() + 1L) * ph.to_int64()
+      }
+    }
+  }
+  if size > 0x7FFFFFFFL {
+    raise Failure::Failure("PNG: image too large")
+  }
+  size.to_int()
+}
+
+///|
+/// Reverse filters on packed scanlines; each row starts on a byte boundary.
+fn png_unfilter(
+  w : Int,
+  h : Int,
+  bd : Int,
+  ct : Int,
+  dec : Bytes,
+) -> Bytes raise Failure {
+  let pitch = png_pitch(w, bd, ct)
+  let bpp = (png_spp(ct) * bd + 7) / 8
+  let ssl = pitch + 1
+  let arr = Array::make(pitch * h, b'\x00')
+  let prev = Array::make(pitch, b'\x00')
+  for y = 0; y < h; y = y + 1 {
+    let rs = y * ssl
+    apply_filter(
+      dec[rs].to_int(),
+      dec[rs + 1:rs + ssl].to_owned(),
+      prev,
+      y,
+      bpp,
+      arr,
+      pitch,
+    )
+    for x = 0; x < pitch; x = x + 1 {
+      prev[x] = arr[y * pitch + x]
+    }
+  }
+  Bytes::from_array(arr)
+}
+
+///|
+/// Read a sample at its original precision, before transparency comparison.
+fn png_sample(
+  data : Bytes,
+  row : Int,
+  x : Int,
+  channel : Int,
+  bd : Int,
+  sp : Int,
+) -> Int {
+  if bd < 8 {
+    let per_byte = 8 / bd
+    (data[row + x / per_byte].to_int() >> (8 - bd - x % per_byte * bd)) &
+    ((1 << bd) - 1)
+  } else {
+    let offset = row + (x * sp + channel) * (bd / 8)
+    if bd == 16 {
+      (data[offset].to_int() << 8) | data[offset + 1].to_int()
+    } else {
+      data[offset].to_int()
+    }
+  }
+}
+
+///|
+/// Expand packed samples/palette entries and normalize samples to 8-bit output.
+fn png_expand(
+  data : Bytes,
+  w : Int,
+  h : Int,
+  bd : Int,
+  ct : Int,
+  pal : Array[Color],
+  trns : Bytes,
+) -> Bytes raise Failure {
+  if bd == 8 && ct != PC_IDX && trns.length() == 0 {
+    return data
+  }
+  let sp = png_spp(ct)
+  let transparent = trns.length() > 0 && ct != PC_IDX
+  let bpp = if ct == PC_IDX {
+    4
+  } else {
+    sp + (if transparent { 1 } else { 0 })
+  }
+  let pitch = png_pitch(w, bd, ct)
+  let arr = Array::make(w * h * bpp, b'\x00')
+  let mask = (1 << bd) - 1
+  let transparent_samples = Array::make(sp, 0)
+  if transparent {
+    for c = 0; c < sp; c = c + 1 {
+      transparent_samples[c] = (
+          (trns[c * 2].to_int() << 8) | trns[c * 2 + 1].to_int()
+        ) &
+        mask
+    }
+  }
+  for y = 0; y < h; y = y + 1 {
+    for x = 0; x < w; x = x + 1 {
+      let dst = (y * w + x) * bpp
+      if ct == PC_IDX {
+        let index = png_sample(data, y * pitch, x, 0, bd, sp)
+        if index >= pal.length() {
+          raise Failure::Failure("PNG: palette index out of range")
+        }
+        let color = pal[index]
+        arr[dst] = color.r.to_byte()
+        arr[dst + 1] = color.g.to_byte()
+        arr[dst + 2] = color.b.to_byte()
+        arr[dst + 3] = color.a.to_byte()
+      } else {
+        let mut matches = transparent
+        for c = 0; c < sp; c = c + 1 {
+          let sample = png_sample(data, y * pitch, x, c, bd, sp)
+          if transparent && sample != transparent_samples[c] {
+            matches = false
+          }
+          let value = if bd == 16 {
+            sample >> 8
+          } else if bd < 8 {
+            sample * 255 / mask
+          } else {
+            sample
+          }
+          arr[dst + c] = value.to_byte()
+        }
+        if transparent {
+          arr[dst + sp] = if matches { b'\x00' } else { b'\xFF' }
+        }
+      }
+    }
+  }
+  Bytes::from_array(arr)
 }
 
 ///|
@@ -942,40 +1296,12 @@ fn decode_plain(
   bd : Int,
   ct : Int,
   pal : Array[Color],
+  trns : Bytes,
   dec : Bytes,
 ) -> Image raise Failure {
-  let sp = png_spp(ct)
-  let bpp = sp * (if bd >= 8 { bd / 8 } else { 1 })
-  let pitch = if bd < 8 { (w * bd * sp + 7) / 8 } else { w * bpp }
-  let ssl = if bd >= 8 { w * bpp + 1 } else { (w * bd * sp + 7) / 8 + 1 }
-
-  let arr = Array::make(w * h * bpp, b'\x00')
-  let prev = Array::make(pitch, b'\x00')
-
-  for y = 0; y < h; y = y + 1 {
-    let rs = y * ssl
-    if rs + ssl > dec.length() {
-      raise Failure::Failure("PNG: short row")
-    }
-    let ft = dec[rs].to_int()
-    let rd = dec[rs + 1:rs + ssl].to_owned()
-
-    apply_filter(ft, rd, prev, y, bpp, arr, pitch)
-
-    // Save current row as previous for next iteration
-    let ro = y * pitch
-    for x = 0; x < pitch && ro + x < arr.length(); x = x + 1 {
-      prev[x] = arr[ro + x]
-    }
-  }
-
-  let raw = Bytes::from_array(arr)
-  let fb = if ct == PC_IDX && pal.length() > 0 {
-    idx2rgba(raw, w, h, bd, pal)
-  } else {
-    raw
-  }
-  Image::new(w, h, out_fmt(ct), fb)
+  let raw = png_unfilter(w, h, bd, ct, dec)
+  let pixels = png_expand(raw, w, h, bd, ct, pal, trns)
+  Image::new(w, h, out_fmt(ct, trns.length() > 0), pixels)
 }
 
 ///|
@@ -986,10 +1312,14 @@ fn decode_a7(
   bd : Int,
   ct : Int,
   pal : Array[Color],
+  trns : Bytes,
   dec : Bytes,
 ) -> Image raise Failure {
-  let sp = png_spp(ct)
-  let bpp = if bd >= 8 { sp * bd / 8 } else { 1 }
+  let bpp = if ct == PC_IDX {
+    4
+  } else {
+    png_spp(ct) + (if trns.length() > 0 { 1 } else { 0 })
+  }
   let oarr = Array::make(w * h * bpp, b'\x00')
   let mut sp_off = 0
 
@@ -1000,27 +1330,16 @@ fn decode_a7(
     }
 
     let (xs, ys, xst, yst) = a7_params[pass]
-    let ppitch = if bd < 8 { (pw * bd * sp + 7) / 8 } else { pw * bpp }
-    let psl = if bd >= 8 { pw * bpp + 1 } else { (pw * bd * sp + 7) / 8 + 1 }
-
-    let parr = Array::make(ph * ppitch, b'\x00')
-    let prev = Array::make(ppitch, b'\x00')
-
-    for y = 0; y < ph; y = y + 1 {
-      if sp_off + psl > dec.length() {
-        raise Failure::Failure("PNG: short a7")
-      }
-      let ft = dec[sp_off].to_int()
-      let rd = dec[sp_off + 1:sp_off + psl].to_owned()
-      sp_off = sp_off + psl
-
-      apply_filter(ft, rd, prev, y, bpp, parr, ppitch)
-
-      let ro = y * ppitch
-      for x = 0; x < ppitch && ro + x < parr.length(); x = x + 1 {
-        prev[x] = parr[ro + x]
-      }
-    }
+    let pass_size = (png_pitch(pw, bd, ct) + 1) * ph
+    let raw = png_unfilter(
+      pw,
+      ph,
+      bd,
+      ct,
+      dec[sp_off:sp_off + pass_size].to_owned(),
+    )
+    sp_off = sp_off + pass_size
+    let pixels = png_expand(raw, pw, ph, bd, ct, pal, trns)
 
     // Scatter pass pixels to output image
     for py = 0; py < ph; py = py + 1 {
@@ -1028,91 +1347,13 @@ fn decode_a7(
       for px = 0; px < pw; px = px + 1 {
         let ox = xs + px * xst
         for b = 0; b < bpp; b = b + 1 {
-          let si = py * ppitch + px * bpp + b
+          let si = (py * pw + px) * bpp + b
           let di = oy * (w * bpp) + ox * bpp + b
-          if si < parr.length() && di < oarr.length() {
-            oarr[di] = parr[si]
-          }
+          oarr[di] = pixels[si]
         }
       }
     }
   }
 
-  let raw = Bytes::from_array(oarr)
-  let fb = if ct == PC_IDX && pal.length() > 0 {
-    idx2rgba(raw, w, h, bd, pal)
-  } else {
-    raw
-  }
-  Image::new(w, h, out_fmt(ct), fb)
-}
-
-///|
-/// Convert indexed pixel data to RGBA using a palette
-/// Pre-computes palette as RGBA byte quads to avoid per-pixel to_byte() calls
-fn idx2rgba(
-  data : Bytes,
-  w : Int,
-  h : Int,
-  bd : Int,
-  pal : Array[Color],
-) -> Bytes raise Failure {
-  let nc = pal.length()
-  let n = w * h
-  let arr = Array::make(n * 4, b'\x00')
-
-  // Pre-compute palette as RGBA byte quads (eliminates per-pixel to_byte + struct field access)
-  let pal_bytes = Array::make(nc, [b'\x00', b'\x00', b'\x00', b'\xFF'])
-  for i = 0; i < nc; i = i + 1 {
-    let c = pal[i]
-    pal_bytes[i] = [c.r.to_byte(), c.g.to_byte(), c.b.to_byte(), c.a.to_byte()]
-  }
-  let default_bytes = [b'\x00', b'\x00', b'\x00', b'\xFF']
-
-  if bd == 8 {
-    for i = 0; i < n; i = i + 1 {
-      let idx = data[i].to_int()
-      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
-      let d = i * 4
-      arr[d] = c[0]
-      arr[d + 1] = c[1]
-      arr[d + 2] = c[2]
-      arr[d + 3] = c[3]
-    }
-  } else if bd == 4 {
-    for i = 0; i < n; i = i + 1 {
-      let bv = data[i / 2].to_int()
-      let idx = if i % 2 == 0 { (bv >> 4) & 0xF } else { bv & 0xF }
-      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
-      let d = i * 4
-      arr[d] = c[0]
-      arr[d + 1] = c[1]
-      arr[d + 2] = c[2]
-      arr[d + 3] = c[3]
-    }
-  } else if bd == 2 {
-    for i = 0; i < n; i = i + 1 {
-      let bv = data[i / 4].to_int()
-      let idx = (bv >> (6 - i % 4 * 2)) & 0x3
-      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
-      let d = i * 4
-      arr[d] = c[0]
-      arr[d + 1] = c[1]
-      arr[d + 2] = c[2]
-      arr[d + 3] = c[3]
-    }
-  } else if bd == 1 {
-    for i = 0; i < n; i = i + 1 {
-      let idx = (data[i / 8].to_int() >> (7 - i % 8)) & 1
-      let c = if idx < nc { pal_bytes[idx] } else { default_bytes }
-      let d = i * 4
-      arr[d] = c[0]
-      arr[d + 1] = c[1]
-      arr[d + 2] = c[2]
-      arr[d + 3] = c[3]
-    }
-  } else {
-    raise Failure::Failure("PNG: bad idx depth")
-  }
-  Bytes::from_array(arr)
+  Image::new(w, h, out_fmt(ct, trns.length() > 0), Bytes::from_array(oarr))
 }
