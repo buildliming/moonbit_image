@@ -32,6 +32,8 @@ pub fn image_dimensions(Bytes) -> (Int, Int, ImageFormat) raise Failure
 
 pub fn image_format_name(ImageFormat) -> String
 
+pub fn is_encode_supported(ImageFormat) -> Bool
+
 pub fn is_supported_format(Bytes) -> Bool
 
 pub fn jpeg_dimensions(Bytes) -> (Int, Int) raise Failure
@@ -117,4 +119,3 @@ pub enum PixelFormat {
 // Type aliases
 
 // Traits
-

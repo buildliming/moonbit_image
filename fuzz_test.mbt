@@ -54,7 +54,7 @@ test "fuzz_bmp" {
     let length = 10 + len_seed2 % 500 // 10..510 bytes
     let data = random_bytes(state, length)
     try {
-      let img = decode_bmp(data)
+      let img = @image.decode_bmp(data)
       let _w = img.width
       let _h = img.height
       ()
@@ -77,7 +77,7 @@ test "fuzz_qoi" {
     let length = 10 + len_seed % 500
     let data = random_bytes(state, length)
     try {
-      let img = decode_qoi(data)
+      let img = @image.decode_qoi(data)
       let _w = img.width
       let _h = img.height
       ()
@@ -100,7 +100,7 @@ test "fuzz_tga" {
     let length = 10 + len_seed % 500
     let data = random_bytes(state, length)
     try {
-      let img = decode_tga(data)
+      let img = @image.decode_tga(data)
       let _w = img.width
       let _h = img.height
       ()
@@ -123,7 +123,7 @@ test "fuzz_png" {
     let length = 10 + len_seed % 500
     let data = random_bytes(state, length)
     try {
-      let img = decode_png(data)
+      let img = @image.decode_png(data)
       let _w = img.width
       let _h = img.height
       ()
@@ -146,7 +146,7 @@ test "fuzz_gif" {
     let length = 10 + len_seed % 500
     let data = random_bytes(state, length)
     try {
-      let img = decode_gif(data)
+      let img = @image.decode_gif(data)
       let _w = img.width
       let _h = img.height
       ()
@@ -169,7 +169,7 @@ test "fuzz_jpeg" {
     let length = 10 + len_seed % 500
     let data = random_bytes(state, length)
     try {
-      let img = decode_jpeg(data)
+      let img = @image.decode_jpeg(data)
       let _w = img.width
       let _h = img.height
       ()
@@ -192,7 +192,7 @@ test "fuzz_detect_format" {
     let length = 5 + len_seed % 100
     let data = random_bytes(state, length)
     // Detect format should never crash, always return Option
-    let _ = detect_format(data)
+    let _ = @image.detect_format(data)
   }
 }
 
@@ -210,7 +210,7 @@ test "fuzz_bmp_boundary" {
     let size = test_sizes[i]
     let data = random_bytes(seed + i, size)
     try {
-      let img = decode_bmp(data)
+      let img = @image.decode_bmp(data)
       let _w = img.width
       let _h = img.height
       ()
@@ -229,7 +229,7 @@ test "fuzz_png_boundary" {
     let size = test_sizes[i]
     let data = random_bytes(seed + i, size)
     try {
-      let img = decode_png(data)
+      let img = @image.decode_png(data)
       let _w = img.width
       let _h = img.height
       ()

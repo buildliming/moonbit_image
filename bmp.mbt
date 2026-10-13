@@ -38,7 +38,9 @@ priv struct BmpDecoder {
   bpp : Int
   compression : Int
   data_offset : Int
+  data_end : Int
   dib_size : Int
+  palette_count : Int
 }
 
 ///|
@@ -50,17 +52,22 @@ fn BmpDecoder::new(data : Bytes) -> BmpDecoder raise Failure {
   if data[0] != b'B' || data[1] != b'M' {
     raise Failure::Failure("BMP: invalid signature, expected 'BM'")
   }
-  // Read data offset from file header
-  let data_offset = read_u32_le(data, 10)
-  // Read DIB header
-  if data.length() < 18 {
+  if data.length() < 54 {
     raise Failure::Failure("BMP: file too small for DIB header")
   }
+  let data_offset = read_u32_le(data, 10)
   let dib_size = read_u32_le(data, 14)
-  if dib_size < 40 {
-    raise Failure::Failure(
-      "BMP: unsupported DIB header (BITMAPINFOHEADER required)",
-    )
+  if dib_size != 40 &&
+    dib_size != 52 &&
+    dib_size != 56 &&
+    dib_size != 108 &&
+    dib_size != 124 {
+    raise Failure::Failure("BMP: unsupported DIB header")
+  }
+  if dib_size > data.length() - 14 ||
+    data_offset < 14 + dib_size ||
+    data_offset > data.length() {
+    raise Failure::Failure("BMP: invalid header or pixel offset")
   }
   let width_raw = read_u32_le(data, 18)
   let height_raw = read_u32_le(data, 22)
@@ -73,7 +80,76 @@ fn BmpDecoder::new(data : Bytes) -> BmpDecoder raise Failure {
   }
   let bpp = read_u16_le(data, 28)
   let compression = read_u32_le(data, 30)
-  { data, width, height, top_down, bpp, compression, data_offset, dib_size }
+  if read_u16_le(data, 26) != 1 {
+    raise Failure::Failure("BMP: invalid planes")
+  }
+  if bpp != 1 && bpp != 4 && bpp != 8 && bpp != 24 && bpp != 32 {
+    raise Failure::Failure("BMP: unsupported bit depth: \{bpp}")
+  }
+  if !(compression == 0 ||
+    (compression == BI_RLE8 && bpp == 8) ||
+    (compression == BI_RLE4 && bpp == 4) ||
+    (compression == 3 && bpp == 32)) {
+    raise Failure::Failure("BMP: unsupported compression or bit depth")
+  }
+  if top_down && (compression == BI_RLE8 || compression == BI_RLE4) {
+    raise Failure::Failure("BMP: top-down RLE is invalid")
+  }
+  let _ = checked_image_size(width, height, if bpp == 24 { 3 } else { 4 })
+  if compression == 3 {
+    // This decoder supports the byte-aligned BGRA layout, not arbitrary masks.
+    if data_offset < 66 {
+      raise Failure::Failure("BMP: truncated color masks")
+    }
+    if read_u32_le(data, 54) != 0x00FF0000 ||
+      read_u32_le(data, 58) != 0x0000FF00 ||
+      read_u32_le(data, 62) != 0x000000FF {
+      raise Failure::Failure("BMP: unsupported color masks")
+    }
+    if dib_size >= 56 {
+      let alpha_mask = read_u32_le(data, 66)
+      if alpha_mask != 0 && alpha_mask != 0xFF000000 {
+        raise Failure::Failure("BMP: unsupported alpha mask")
+      }
+    }
+  }
+  let palette_count = if bpp <= 8 {
+    let used = read_u32_le(data, 46)
+    let count = if used == 0 { 1 << bpp } else { used }
+    if count <= 0 ||
+      count > 1 << bpp ||
+      count > (data_offset - 14 - dib_size) / 4 {
+      raise Failure::Failure("BMP: invalid or truncated palette")
+    }
+    count
+  } else {
+    0
+  }
+  let data_end = if compression == BI_RLE8 || compression == BI_RLE4 {
+    let size = read_u32_le(data, 34)
+    if size < 0 || size > data.length() - data_offset {
+      raise Failure::Failure("BMP: invalid compressed data size")
+    }
+    if size == 0 {
+      data.length()
+    } else {
+      data_offset + size
+    }
+  } else {
+    data.length()
+  }
+  {
+    data,
+    width,
+    height,
+    top_down,
+    bpp,
+    compression,
+    data_offset,
+    data_end,
+    dib_size,
+    palette_count,
+  }
 }
 
 ///|
@@ -100,15 +176,10 @@ fn BmpDecoder::decode(self : BmpDecoder) -> Image raise Failure {
 
 ///|
 /// Read palette from BMP data (after DIB header)
-fn BmpDecoder::read_palette(
-  self : BmpDecoder,
-  num_colors : Int,
-) -> Array[Color] {
+fn BmpDecoder::read_palette(self : BmpDecoder) -> Array[Color] {
   let palette_offset = 14 + self.dib_size // file header + DIB header
-  let palette = Array::make(num_colors, Color::default())
-  for i = 0
-      i < num_colors && i * 4 + palette_offset + 3 < self.data.length()
-      i = i + 1 {
+  let palette = Array::make(self.palette_count, Color::default())
+  for i = 0; i < self.palette_count; i = i + 1 {
     let offset = palette_offset + i * 4
     let b = self.data[offset].to_int()
     let g = self.data[offset + 1].to_int()
@@ -133,10 +204,12 @@ fn palette_to_rgba_bytes(palette : Array[Color]) -> Array[Array[Byte]] {
 
 ///|
 /// Row stride in bytes (padded to 4-byte boundary)
-fn bmp_row_stride(width : Int, bpp : Int) -> Int {
-  let row_bits = width * bpp
-  let row_bytes = (row_bits + 7) / 8
-  (row_bytes + 3) / 4 * 4
+fn bmp_row_stride(width : Int, bpp : Int) -> Int raise Failure {
+  let stride = (width.to_int64() * bpp.to_int64() + 31L) / 32L * 4L
+  if stride > 0x7FFFFFFFL {
+    raise Failure::Failure("BMP: row stride too large")
+  }
+  stride.to_int()
 }
 
 ///|
@@ -147,18 +220,15 @@ fn write_palette_pixel(
   idx : Int,
   num_colors : Int,
   palette_rgba : Array[Array[Byte]],
-) -> Unit {
-  if idx < num_colors {
+) -> Unit raise Failure {
+  if idx >= 0 && idx < num_colors {
     let c = palette_rgba[idx]
     _buf[dst] = c[0]
     _buf[dst + 1] = c[1]
     _buf[dst + 2] = c[2]
     _buf[dst + 3] = c[3]
   } else {
-    _buf[dst] = b'\x00'
-    _buf[dst + 1] = b'\x00'
-    _buf[dst + 2] = b'\x00'
-    _buf[dst + 3] = b'\xFF'
+    raise Failure::Failure("BMP: palette index out of range")
   }
 }
 
@@ -167,10 +237,10 @@ fn write_palette_pixel(
 fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Image raise Failure {
   let stride = bmp_row_stride(self.width, 32)
   // Upfront bounds validation: total pixel data region must fit
-  if self.data.length() < self.data_offset + self.height * stride {
+  if self.height > (self.data.length() - self.data_offset) / stride {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
-  let out_size = self.width * self.height * 4
+  let out_size = checked_image_size(self.width, self.height, 4)
   let _buf = Array::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
@@ -199,10 +269,10 @@ fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Image raise Failure {
 fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Image raise Failure {
   let stride = bmp_row_stride(self.width, 24)
   // Upfront bounds validation: total pixel data region must fit
-  if self.data.length() < self.data_offset + self.height * stride {
+  if self.height > (self.data.length() - self.data_offset) / stride {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
-  let out_size = self.width * self.height * 3
+  let out_size = checked_image_size(self.width, self.height, 3)
   let _buf = Array::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
@@ -228,14 +298,14 @@ fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Image raise Failure {
 ///|
 /// Decode 8-bit indexed (uncompressed) — uses pre-computed palette
 fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Image raise Failure {
-  let palette = self.read_palette(256)
+  let palette = self.read_palette()
   let palette_rgba = palette_to_rgba_bytes(palette)
   let stride = bmp_row_stride(self.width, 8)
   // Upfront bounds validation
-  if self.data.length() < self.data_offset + self.height * stride {
+  if self.height > (self.data.length() - self.data_offset) / stride {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
-  let out_size = self.width * self.height * 4
+  let out_size = checked_image_size(self.width, self.height, 4)
   let _buf = Array::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
@@ -245,7 +315,7 @@ fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Image raise Failure {
       let src = row_offset + col
       let idx = self.data[src].to_int()
       let dst = (row * self.width + col) * 4
-      write_palette_pixel(_buf, dst, idx, 256, palette_rgba)
+      write_palette_pixel(_buf, dst, idx, self.palette_count, palette_rgba)
     }
   }
   Image::new(
@@ -259,14 +329,14 @@ fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Image raise Failure {
 ///|
 /// Decode 4-bit indexed (uncompressed)
 fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Image raise Failure {
-  let palette = self.read_palette(16)
+  let palette = self.read_palette()
   let palette_rgba = palette_to_rgba_bytes(palette)
   let stride = bmp_row_stride(self.width, 4)
   // Upfront bounds validation
-  if self.data.length() < self.data_offset + self.height * stride {
+  if self.height > (self.data.length() - self.data_offset) / stride {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
-  let out_size = self.width * self.height * 4
+  let out_size = checked_image_size(self.width, self.height, 4)
   let _buf = Array::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
@@ -282,7 +352,7 @@ fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Image raise Failure {
         byte_val & 0xF
       }
       let dst = (row * self.width + col) * 4
-      write_palette_pixel(_buf, dst, idx, 16, palette_rgba)
+      write_palette_pixel(_buf, dst, idx, self.palette_count, palette_rgba)
     }
   }
   Image::new(
@@ -296,14 +366,14 @@ fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Image raise Failure {
 ///|
 /// Decode 1-bit monochrome
 fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Image raise Failure {
-  let palette = self.read_palette(2)
+  let palette = self.read_palette()
   let palette_rgba = palette_to_rgba_bytes(palette)
   let stride = bmp_row_stride(self.width, 1)
   // Upfront bounds validation
-  if self.data.length() < self.data_offset + self.height * stride {
+  if self.height > (self.data.length() - self.data_offset) / stride {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
-  let out_size = self.width * self.height * 4
+  let out_size = checked_image_size(self.width, self.height, 4)
   let _buf = Array::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
@@ -315,7 +385,7 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Image raise Failure {
       // MSB first (leftmost pixel is bit 7)
       let bit = (byte_val >> (7 - col % 8)) & 1
       let dst = (row * self.width + col) * 4
-      write_palette_pixel(_buf, dst, bit, 2, palette_rgba)
+      write_palette_pixel(_buf, dst, bit, self.palette_count, palette_rgba)
     }
   }
   Image::new(
@@ -332,11 +402,10 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Image raise Failure {
 
 ///|
 /// Decode RLE8 compressed 8-bit BMP
-/// Uses valid_row flag updated on row transitions to avoid per-pixel bounds checks
 fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
-  let palette = self.read_palette(256)
+  let palette = self.read_palette()
   let palette_rgba = palette_to_rgba_bytes(palette)
-  let out_size = self.width * self.height * 4
+  let out_size = checked_image_size(self.width, self.height, 4)
   let _buf = Array::make(out_size, Byte::default())
 
   let row_step = if self.top_down { 1 } else { -1 }
@@ -349,7 +418,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
     let mut c = col
     let mut vr = valid_row
 
-    if p + 1 >= self.data.length() {
+    if self.data_end - p < 2 {
       raise Failure::Failure("BMP RLE8: unexpected end of data")
     }
     let count = self.data[p].to_int()
@@ -359,6 +428,9 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
     if count == 0 {
       if value == 0 {
         // End of line
+        if !vr {
+          raise Failure::Failure("BMP RLE8: row out of bounds")
+        }
         r = r + row_step
         vr = r >= 0 && r < self.height
         c = 0
@@ -368,7 +440,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
         break
       } else if value == 2 {
         // Delta: move to new position
-        if p + 1 >= self.data.length() {
+        if self.data_end - p < 2 {
           raise Failure::Failure("BMP RLE8: truncated delta")
         }
         let dx = self.data[p].to_int()
@@ -377,34 +449,55 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
         c = c + dx
         r = r + row_step * dy
         vr = r >= 0 && r < self.height
+        if !vr || c > self.width {
+          raise Failure::Failure("BMP RLE8: delta out of bounds")
+        }
         continue p, r, c, vr
       } else {
         // Absolute run: next `value` bytes are literal indices
         let run_len = value
-        if p + run_len > self.data.length() {
+        if !vr || run_len > self.width - c {
+          raise Failure::Failure("BMP RLE8: run exceeds row")
+        }
+        if run_len + run_len % 2 > self.data_end - p {
           raise Failure::Failure("BMP RLE8: truncated absolute run")
         }
         for i = 0; i < run_len; i = i + 1 {
           if vr {
             let idx = self.data[p].to_int()
             let dst = (r * self.width + c) * 4
-            write_palette_pixel(_buf, dst, idx, 256, palette_rgba)
+            write_palette_pixel(
+              _buf,
+              dst,
+              idx,
+              self.palette_count,
+              palette_rgba,
+            )
           }
           c = c + 1
           p = p + 1
         }
         // Word-align: skip padding byte if run_len is odd
-        if run_len % 2 == 1 && p < self.data.length() {
+        if run_len % 2 == 1 {
           p = p + 1
         }
         continue p, r, c, vr
       }
     } else {
       // Encoded run: repeat `value` for `count` pixels
+      if !vr || count > self.width - c {
+        raise Failure::Failure("BMP RLE8: run exceeds row")
+      }
       for _i = 0; _i < count; _i = _i + 1 {
         if vr {
           let dst = (r * self.width + c) * 4
-          write_palette_pixel(_buf, dst, value, 256, palette_rgba)
+          write_palette_pixel(
+            _buf,
+            dst,
+            value,
+            self.palette_count,
+            palette_rgba,
+          )
         }
         c = c + 1
       }
@@ -426,11 +519,10 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
 
 ///|
 /// Decode RLE4 compressed 4-bit BMP
-/// Uses valid_row flag updated on row transitions to avoid per-pixel bounds checks
 fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
-  let palette = self.read_palette(16)
+  let palette = self.read_palette()
   let palette_rgba = palette_to_rgba_bytes(palette)
-  let out_size = self.width * self.height * 4
+  let out_size = checked_image_size(self.width, self.height, 4)
   let _buf = Array::make(out_size, Byte::default())
 
   let row_step = if self.top_down { 1 } else { -1 }
@@ -443,7 +535,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
     let mut c = col
     let mut vr = valid_row
 
-    if p + 1 >= self.data.length() {
+    if self.data_end - p < 2 {
       raise Failure::Failure("BMP RLE4: unexpected end of data")
     }
     let count = self.data[p].to_int()
@@ -453,6 +545,9 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
     if count == 0 {
       if value == 0 {
         // End of line
+        if !vr {
+          raise Failure::Failure("BMP RLE4: row out of bounds")
+        }
         r = r + row_step
         vr = r >= 0 && r < self.height
         c = 0
@@ -462,7 +557,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
         break
       } else if value == 2 {
         // Delta
-        if p + 1 >= self.data.length() {
+        if self.data_end - p < 2 {
           raise Failure::Failure("BMP RLE4: truncated delta")
         }
         let dx = self.data[p].to_int()
@@ -471,12 +566,18 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
         c = c + dx
         r = r + row_step * dy
         vr = r >= 0 && r < self.height
+        if !vr || c > self.width {
+          raise Failure::Failure("BMP RLE4: delta out of bounds")
+        }
         continue p, r, c, vr
       } else {
         // Absolute run
         let num_pixels = value
         let num_bytes = (num_pixels + 1) / 2
-        if p + num_bytes > self.data.length() {
+        if !vr || num_pixels > self.width - c {
+          raise Failure::Failure("BMP RLE4: run exceeds row")
+        }
+        if num_bytes + num_bytes % 2 > self.data_end - p {
           raise Failure::Failure("BMP RLE4: truncated absolute run")
         }
         let mut pixels_read = 0
@@ -487,7 +588,13 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
           let idx_hi = (byte_val >> 4) & 0x0F
           if pixels_read < num_pixels && vr {
             let dst = (r * self.width + c) * 4
-            write_palette_pixel(_buf, dst, idx_hi, 16, palette_rgba)
+            write_palette_pixel(
+              _buf,
+              dst,
+              idx_hi,
+              self.palette_count,
+              palette_rgba,
+            )
           }
           c = c + 1
           pixels_read = pixels_read + 1
@@ -495,13 +602,19 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
           let idx_lo = byte_val & 0x0F
           if pixels_read < num_pixels && vr {
             let dst = (r * self.width + c) * 4
-            write_palette_pixel(_buf, dst, idx_lo, 16, palette_rgba)
+            write_palette_pixel(
+              _buf,
+              dst,
+              idx_lo,
+              self.palette_count,
+              palette_rgba,
+            )
+            c = c + 1
+            pixels_read = pixels_read + 1
           }
-          c = c + 1
-          pixels_read = pixels_read + 1
         }
         // Word-align
-        if num_bytes % 2 == 1 && p < self.data.length() {
+        if num_bytes % 2 == 1 {
           p = p + 1
         }
         continue p, r, c, vr
@@ -510,11 +623,14 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
       // Encoded run: alternate between two nibbles
       let hi_nib = (value >> 4) & 0x0F
       let lo_nib = value & 0x0F
+      if !vr || count > self.width - c {
+        raise Failure::Failure("BMP RLE4: run exceeds row")
+      }
       for i = 0; i < count; i = i + 1 {
         let idx = if i % 2 == 0 { hi_nib } else { lo_nib }
         if vr {
           let dst = (r * self.width + c) * 4
-          write_palette_pixel(_buf, dst, idx, 16, palette_rgba)
+          write_palette_pixel(_buf, dst, idx, self.palette_count, palette_rgba)
         }
         c = c + 1
       }

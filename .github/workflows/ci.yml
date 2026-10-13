@@ -6,27 +6,86 @@ on:
   pull_request:
     branches: [default, main, master]
 
+permissions:
+  contents: read
+
+env:
+  # Pin compiler and core together to the versions used for local validation.
+  MOONBIT_VERSION: 0.10.14+7d59c7ec9
+
 jobs:
   check:
-    name: MoonBit CI
+    name: MoonBit (${{ matrix.target }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [wasm-gc, js, native]
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
 
       - name: Setup MoonBit
         uses: hustcer/setup-moonbit@v1
         with:
-          version: latest
+          version: ${{ env.MOONBIT_VERSION }}
+          core-version: ${{ env.MOONBIT_VERSION }}
 
-      - name: 1. moon check
-        run: moon check --deny-warn
+      - name: Toolchain versions
+        run: moon version --all
 
-      - name: 2. moon fmt --check
+      - name: Strict type check
+        run: moon check --deny-warn --target ${{ matrix.target }}
+
+      - name: Formatting
+        if: matrix.target == 'wasm-gc'
         run: moon fmt --check
 
-      - name: 3. moon info
+      - name: Public interface
+        if: matrix.target == 'wasm-gc'
         run: |
           moon info
+          git diff --exit-code -- pkg.generated.mbti
 
-      - name: 4. moon test
-        run: moon test
+      - name: Tests
+        run: moon test --deny-warn --target ${{ matrix.target }}
+
+  reference:
+    name: Independent Pillow comparison
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup MoonBit
+        uses: hustcer/setup-moonbit@v1
+        with:
+          version: ${{ env.MOONBIT_VERSION }}
+          core-version: ${{ env.MOONBIT_VERSION }}
+
+      - name: Install reference decoder
+        run: python -m pip install Pillow==12.3.0
+
+      - name: Validate reference normalization
+        run: python -B -m unittest discover -s tools -p test_pillow_reference.py
+
+      - name: Compare actual decoder pixels against Pillow
+        run: python tools/verify_decoders.py
+
+      - name: Save comparison results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: decoder-reference-results
+          path: _build/decoder-reference-results.json
+          if-no-files-found: ignore

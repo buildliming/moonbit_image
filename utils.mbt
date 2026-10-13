@@ -1,6 +1,26 @@
 // Copyright (c) 2025 lws
 // Byte reading utilities for image decoding
 
+///|
+/// Bound decoded buffers before allocation, including aggregate GIF frames.
+const MAX_DECODE_BYTES : Int = 268435456
+
+///|
+fn checked_image_size(
+  width : Int,
+  height : Int,
+  bpp : Int,
+) -> Int raise Failure {
+  if width <= 0 || height <= 0 || bpp <= 0 {
+    raise Failure::Failure("Image: invalid dimensions or pixel size")
+  }
+  let pixels = width.to_int64() * height.to_int64()
+  if pixels > MAX_DECODE_BYTES.to_int64() / bpp.to_int64() {
+    raise Failure::Failure("Image: decoded buffer exceeds 256 MiB limit")
+  }
+  (pixels * bpp.to_int64()).to_int()
+}
+
 //-----------------------------------------------------------------------------
 // Byte-level reading helpers
 //-----------------------------------------------------------------------------
@@ -8,7 +28,7 @@
 ///|
 /// Read a 16-bit unsigned integer in little-endian byte order
 fn read_u16_le(data : Bytes, pos : Int) -> Int raise Failure {
-  if pos + 2 > data.length() {
+  if pos < 0 || pos > data.length() - 2 {
     raise Failure::Failure("read_u16_le: position out of bounds")
   }
   let lo = data[pos].to_int()
@@ -19,7 +39,7 @@ fn read_u16_le(data : Bytes, pos : Int) -> Int raise Failure {
 ///|
 /// Read a 32-bit unsigned integer in little-endian byte order
 fn read_u32_le(data : Bytes, pos : Int) -> Int raise Failure {
-  if pos + 4 > data.length() {
+  if pos < 0 || pos > data.length() - 4 {
     raise Failure::Failure("read_u32_le: position out of bounds")
   }
   let b0 = data[pos].to_int()
@@ -32,7 +52,7 @@ fn read_u32_le(data : Bytes, pos : Int) -> Int raise Failure {
 ///|
 /// Read a 32-bit unsigned integer in big-endian byte order
 fn read_u32_be(data : Bytes, pos : Int) -> Int raise Failure {
-  if pos + 4 > data.length() {
+  if pos < 0 || pos > data.length() - 4 {
     raise Failure::Failure("read_u32_be: position out of bounds")
   }
   let b0 = data[pos].to_int()

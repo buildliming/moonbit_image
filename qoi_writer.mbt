@@ -73,7 +73,7 @@ pub fn encode_qoi(image : Image) -> Bytes raise Failure {
   let seen_r = Array::make(64, 0)
   let seen_g = Array::make(64, 0)
   let seen_b = Array::make(64, 0)
-  let seen_a = Array::make(64, 255)
+  let seen_a = Array::make(64, 0)
 
   let mut run = 0
   let data = rgba.data

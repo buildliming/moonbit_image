@@ -62,13 +62,21 @@ fn QoiDecoder::new(data : Bytes) -> QoiDecoder raise Failure {
     raise Failure::Failure("QOI: invalid colorspace value")
   }
 
-  { data, pos: 14, width, height }
+  { data, pos: 14, width, height, }
 }
 
 ///|
 fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
-  let pixel_count = self.width * self.height
-  let out_size = pixel_count * 4 // Always output RGBA8
+  let out_size = checked_image_size(self.width, self.height, 4)
+  let pixel_count = out_size / 4 // Always output RGBA8
+  let data_end = self.data.length() - 8
+  if self.data[data_end:].to_owned() != b"\x00\x00\x00\x00\x00\x00\x00\x01" {
+    raise Failure::Failure("QOI: invalid end marker")
+  }
+  // Even a RUN byte encodes at most 62 pixels; reject impossible headers early.
+  if (pixel_count + 61) / 62 > data_end - self.pos {
+    raise Failure::Failure("QOI: insufficient chunk data")
+  }
   let _pixels = Array::make(out_size, Byte::default())
   let mut pixel_idx = 0
 
@@ -83,12 +91,12 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
   let seen_r = Array::make(64, 0)
   let seen_g = Array::make(64, 0)
   let seen_b = Array::make(64, 0)
-  let seen_a = Array::make(64, 255)
+  let seen_a = Array::make(64, 0)
 
   let mut pos = self.pos
 
   while pixel_idx < pixel_count {
-    if pos >= self.data.length() {
+    if pos >= data_end {
       raise Failure::Failure("QOI: unexpected end of chunk data")
     }
     let byte_val = self.data[pos].to_int()
@@ -97,7 +105,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
     // Determine chunk type by high bits
     if byte_val == QOI_OP_RGB {
       // 8-bit RGB chunk: R, G, B follow
-      if pos + 2 >= self.data.length() {
+      if data_end - pos < 3 {
         raise Failure::Failure("QOI: truncated RGB chunk")
       }
       r = self.data[pos].to_int()
@@ -106,7 +114,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
       pos = pos + 3
     } else if byte_val == QOI_OP_RGBA {
       // 8-bit RGBA chunk: R, G, B, A follow
-      if pos + 3 >= self.data.length() {
+      if data_end - pos < 4 {
         raise Failure::Failure("QOI: truncated RGBA chunk")
       }
       r = self.data[pos].to_int()
@@ -131,7 +139,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
       b = (b + db) & 0xFF
     } else if (byte_val & 0xC0) == QOI_OP_LUMA {
       // Luma chunk: green diff + luma-adjusted red/blue diff
-      if pos >= self.data.length() {
+      if pos >= data_end {
         raise Failure::Failure("QOI: truncated LUMA chunk")
       }
       let byte2 = self.data[pos].to_int()
@@ -147,13 +155,10 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
     } else {
       // QOI_OP_RUN chunk: repeat previous pixel
       let run = (byte_val & 0x3F) + 1
-      if run < 1 || run > 62 {
+      if run > pixel_count - pixel_idx {
         raise Failure::Failure("QOI: invalid run length: \{run}")
       }
       for _i = 0; _i < run; _i = _i + 1 {
-        if pixel_idx >= pixel_count {
-          break
-        }
         let out_offset = pixel_idx * 4
         _pixels[out_offset] = r.to_byte()
         _pixels[out_offset + 1] = g.to_byte()
@@ -186,6 +191,9 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
     seen_a[hash] = a
   }
 
+  if pos != data_end {
+    raise Failure::Failure("QOI: extra pixel chunks")
+  }
   Image::new(
     self.width,
     self.height,

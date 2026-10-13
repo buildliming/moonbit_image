@@ -1108,9 +1108,7 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
   } else {
     png_spp(ct) + (if has_trns { 1 } else { 0 })
   }
-  if w.to_int64() * h.to_int64() > 0x7FFFFFFFL / output_bpp.to_int64() {
-    raise Failure::Failure("PNG: image too large")
-  }
+  let _ = checked_image_size(w, h, output_bpp)
   let expected = png_filtered_size(w, h, bd, ct, il)
   let dec = zlib_decompress(cd.to_bytes(), max_output=expected)
   if dec.length() != expected {
@@ -1155,7 +1153,7 @@ fn png_filtered_size(
       }
     }
   }
-  if size > 0x7FFFFFFFL {
+  if size > MAX_DECODE_BYTES.to_int64() {
     raise Failure::Failure("PNG: image too large")
   }
   size.to_int()

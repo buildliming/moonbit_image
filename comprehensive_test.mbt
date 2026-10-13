@@ -527,10 +527,10 @@ fn make_gif_animated_6x6() -> Bytes {
 ///|
 test "decode_png_filter_up" {
   let data = make_png_filter_up()
-  let img = decode_png(data)
+  let img = @image.decode_png(data)
   check_dims(img, 6, 4)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   let (sr, sg, sb) = compute_checksum(img)
@@ -549,10 +549,10 @@ test "decode_png_filter_up" {
 ///|
 test "decode_png_filter_avg" {
   let data = make_png_filter_avg()
-  let img = decode_png(data)
+  let img = @image.decode_png(data)
   check_dims(img, 6, 4)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   let (sr, sg, sb) = compute_checksum(img)
@@ -571,10 +571,10 @@ test "decode_png_filter_avg" {
 ///|
 test "decode_png_mixed_filters" {
   let data = make_png_mixed_filters()
-  let img = decode_png(data)
+  let img = @image.decode_png(data)
   check_dims(img, 6, 6)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   let (sr, sg, sb) = compute_checksum(img)
@@ -593,10 +593,10 @@ test "decode_png_mixed_filters" {
 ///|
 test "decode_png_multi_idat" {
   let data = make_png_multi_idat()
-  let img = decode_png(data)
+  let img = @image.decode_png(data)
   check_dims(img, 6, 4)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   let (sr, sg, sb) = compute_checksum(img)
@@ -615,10 +615,10 @@ test "decode_png_multi_idat" {
 ///|
 test "decode_jpg_color_8x8" {
   let data = make_jpg_color_8x8()
-  let img = decode_jpeg(data)
+  let img = @image.decode_jpeg(data)
   check_dims(img, 8, 8)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("JPEG RGB8 (jpg_color_8x8) test passed!")
@@ -627,10 +627,10 @@ test "decode_jpg_color_8x8" {
 ///|
 test "decode_jpg_420_16x16" {
   let data = make_jpg_420_16x16()
-  let img = decode_jpeg(data)
+  let img = @image.decode_jpeg(data)
   check_dims(img, 16, 16)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("JPEG RGB8 (jpg_420_16x16) test passed!")
@@ -639,10 +639,10 @@ test "decode_jpg_420_16x16" {
 ///|
 test "decode_jpg_422_16x16" {
   let data = make_jpg_422_16x16()
-  let img = decode_jpeg(data)
+  let img = @image.decode_jpeg(data)
   check_dims(img, 16, 16)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("JPEG RGB8 (jpg_422_16x16) test passed!")
@@ -651,10 +651,10 @@ test "decode_jpg_422_16x16" {
 ///|
 test "decode_jpg_rst_32x32" {
   let data = make_jpg_rst_32x32()
-  let img = decode_jpeg(data)
+  let img = @image.decode_jpeg(data)
   check_dims(img, 32, 32)
   match img.format {
-    PixelFormat::Gray8 => ()
+    @image.PixelFormat::Gray8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("JPEG Gray8 (jpg_rst_32x32) test passed!")
@@ -663,10 +663,10 @@ test "decode_jpg_rst_32x32" {
 ///|
 test "decode_jpg_10x10" {
   let data = make_jpg_10x10()
-  let img = decode_jpeg(data)
+  let img = @image.decode_jpeg(data)
   check_dims(img, 10, 10)
   match img.format {
-    PixelFormat::Gray8 => ()
+    @image.PixelFormat::Gray8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("JPEG Gray8 (jpg_10x10) test passed!")
@@ -675,10 +675,10 @@ test "decode_jpg_10x10" {
 ///|
 test "decode_jpg_color_12x12" {
   let data = make_jpg_color_12x12()
-  let img = decode_jpeg(data)
+  let img = @image.decode_jpeg(data)
   check_dims(img, 12, 12)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("JPEG RGB8 (jpg_color_12x12) test passed!")
@@ -687,10 +687,10 @@ test "decode_jpg_color_12x12" {
 ///|
 test "decode_gif_interlaced_8x8" {
   let data = make_gif_interlaced_8x8()
-  let img = decode_gif(data)
+  let img = @image.decode_gif(data)
   check_dims(img, 8, 8)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("GIF gif_interlaced_8x8 test passed!")
@@ -699,10 +699,10 @@ test "decode_gif_interlaced_8x8" {
 ///|
 test "decode_gif_transparent_8x8" {
   let data = make_gif_transparent_8x8()
-  let img = decode_gif(data)
+  let img = @image.decode_gif(data)
   check_dims(img, 8, 8)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   if img.get_pixel(0, 0).a != 0 {
@@ -717,10 +717,10 @@ test "decode_gif_transparent_8x8" {
 ///|
 test "decode_gif_local_palette_6x6" {
   let data = make_gif_local_palette_6x6()
-  let img = decode_gif(data)
+  let img = @image.decode_gif(data)
   check_dims(img, 6, 6)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   println("GIF gif_local_palette_6x6 test passed!")
@@ -728,7 +728,7 @@ test "decode_gif_local_palette_6x6" {
 
 ///|
 test "decode_gif_animated_6x6" {
-  let anim = decode_gif_all(make_gif_animated_6x6())
+  let anim = @image.decode_gif_all(make_gif_animated_6x6())
   let nf = anim.frame_count()
   if nf != 2 {
     raise Failure::Failure("Expected 2 frames, got \{nf}")
@@ -740,7 +740,7 @@ test "decode_gif_animated_6x6" {
     raise Failure::Failure("Expected loop_count=0")
   }
   match anim.frames[0].format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Bad fmt")
   }
   if anim.delays[0] != 100 {
@@ -766,7 +766,7 @@ test "error_png_crc_mismatch" {
   }
   corrupted[32] = (corrupted[32].to_int() ^ 0xFF).to_byte()
   try {
-    let _ = decode_png(Bytes::from_array(corrupted))
+    let _ = @image.decode_png(Bytes::from_array(corrupted))
     raise Failure::Failure("Expected CRC failure")
   } catch {
     _ => ()
@@ -777,7 +777,7 @@ test "error_png_crc_mismatch" {
 ///|
 test "error_jpeg_bad_soi" {
   try {
-    let _ = decode_jpeg(
+    let _ = @image.decode_jpeg(
       make_bytes([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]),
     )
     raise Failure::Failure("Expected failure")
@@ -790,7 +790,7 @@ test "error_jpeg_bad_soi" {
 ///|
 test "error_jpeg_truncated" {
   try {
-    let _ = decode_jpeg(make_bytes([0xFF, 0xD8]))
+    let _ = @image.decode_jpeg(make_bytes([0xFF, 0xD8]))
     raise Failure::Failure("Expected failure")
   } catch {
     _ => ()
@@ -801,7 +801,7 @@ test "error_jpeg_truncated" {
 ///|
 test "error_gif_truncated" {
   try {
-    let _ = decode_gif(make_bytes([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]))
+    let _ = @image.decode_gif(make_bytes([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]))
     raise Failure::Failure("Expected failure")
   } catch {
     _ => ()
@@ -812,7 +812,7 @@ test "error_gif_truncated" {
 ///|
 test "error_gif_bad_signature" {
   try {
-    let _ = decode_gif(
+    let _ = @image.decode_gif(
       make_bytes([
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
       ]),
@@ -828,7 +828,7 @@ test "error_gif_bad_signature" {
 test "error_gif_no_image" {
   // GIF87a, 2x2, GCT (2 colors=6 bytes), no image, just trailer
   try {
-    let _ = decode_gif(
+    let _ = @image.decode_gif(
       make_bytes([
         0x47, 0x49, 0x46, 0x38, 0x37, 0x61, 0x02, 0x00, 0x02, 0x00, 0x80, 0x00, 0x00,
         0xFF, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x3B,

@@ -24,7 +24,7 @@ fn make_bytes(ints : Array[Int]) -> Bytes {
 ///|
 /// Verify that a decoded image has the expected dimensions
 fn check_dims(
-  img : Image,
+  img : @image.Image,
   expected_w : Int,
   expected_h : Int,
 ) -> Unit raise Failure {
@@ -40,7 +40,7 @@ fn check_dims(
 ///|
 /// Verify a pixel's RGBA color
 fn check_pixel(
-  img : Image,
+  img : @image.Image,
   x : Int,
   y : Int,
   r : Int,
@@ -98,7 +98,7 @@ fn make_test_bmp() -> Bytes {
 ///|
 test "decode_bmp_24bit" {
   let data = make_test_bmp()
-  let img = decode_bmp(data)
+  let img = @image.decode_bmp(data)
   check_dims(img, 2, 2)
 
   // Row 0 (top): Blue, White (BMP stores bottom-up, top row in file becomes row 0)
@@ -145,7 +145,7 @@ fn make_test_tga() -> Bytes {
 ///|
 test "decode_tga_type2" {
   let data = make_test_tga()
-  let img = decode_tga(data)
+  let img = @image.decode_tga(data)
   check_dims(img, 2, 2)
 
   // Top row (row 0): Red, Green
@@ -186,7 +186,7 @@ fn make_test_qoi() -> Bytes {
 ///|
 test "decode_qoi_rgb" {
   let data = make_test_qoi()
-  let img = decode_qoi(data)
+  let img = @image.decode_qoi(data)
   check_dims(img, 2, 2)
 
   // Row-major: Red, Green, Blue, White
@@ -235,7 +235,7 @@ fn make_test_png() -> Bytes {
 ///|
 test "decode_png_grayscale" {
   let data = make_test_png()
-  let img = decode_png(data)
+  let img = @image.decode_png(data)
   check_dims(img, 2, 2)
 
   // Pixels: 0, 85, 170, 255
@@ -254,43 +254,43 @@ test "decode_png_grayscale" {
 test "format_detection" {
   // BMP detection
   let bmp = make_test_bmp()
-  match detect_format(bmp) {
+  match @image.detect_format(bmp) {
     Some(_) => ()
     _ => raise Failure::Failure("BMP not detected correctly")
   }
 
   // TGA detection
   let tga = make_test_tga()
-  match detect_format(tga) {
+  match @image.detect_format(tga) {
     Some(_) => ()
     _ => raise Failure::Failure("TGA not detected correctly")
   }
 
   // QOI detection
   let qoi = make_test_qoi()
-  match detect_format(qoi) {
+  match @image.detect_format(qoi) {
     Some(_) => ()
     _ => raise Failure::Failure("QOI not detected correctly")
   }
 
   // PNG detection
   let png = make_test_png()
-  match detect_format(png) {
+  match @image.detect_format(png) {
     Some(_) => ()
     _ => raise Failure::Failure("PNG not detected correctly")
   }
 
   // is_supported_format
-  if !is_supported_format(bmp) {
+  if !@image.is_supported_format(bmp) {
     raise Failure::Failure("BMP should be supported")
   }
-  if !is_supported_format(tga) {
+  if !@image.is_supported_format(tga) {
     raise Failure::Failure("TGA should be supported")
   }
-  if !is_supported_format(qoi) {
+  if !@image.is_supported_format(qoi) {
     raise Failure::Failure("QOI should be supported")
   }
-  if !is_supported_format(png) {
+  if !@image.is_supported_format(png) {
     raise Failure::Failure("PNG should be supported")
   }
 
@@ -298,7 +298,7 @@ test "format_detection" {
   let junk = make_bytes([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   ])
-  if is_supported_format(junk) {
+  if @image.is_supported_format(junk) {
     raise Failure::Failure("Random bytes should not be supported")
   }
 
@@ -313,25 +313,25 @@ test "format_detection" {
 test "unified_decode" {
   // Test auto-detect and decode for each format
   let bmp = make_test_bmp()
-  let bmp_img = decode(bmp)
+  let bmp_img = @image.decode(bmp)
   if bmp_img.width != 2 || bmp_img.height != 2 {
     raise Failure::Failure("BMP decode dimensions wrong")
   }
 
   let tga = make_test_tga()
-  let tga_img = decode(tga)
+  let tga_img = @image.decode(tga)
   if tga_img.width != 2 || tga_img.height != 2 {
     raise Failure::Failure("TGA decode dimensions wrong")
   }
 
   let qoi = make_test_qoi()
-  let qoi_img = decode(qoi)
+  let qoi_img = @image.decode(qoi)
   if qoi_img.width != 2 || qoi_img.height != 2 {
     raise Failure::Failure("QOI decode dimensions wrong")
   }
 
   let png = make_test_png()
-  let png_img = decode(png)
+  let png_img = @image.decode(png)
   if png_img.width != 2 || png_img.height != 2 {
     raise Failure::Failure("PNG decode dimensions wrong")
   }
@@ -346,25 +346,25 @@ test "unified_decode" {
 ///|
 test "image_dimensions_fast" {
   let bmp = make_test_bmp()
-  let (w, h, _fmt) = image_dimensions(bmp)
+  let (w, h, _fmt) = @image.image_dimensions(bmp)
   if w != 2 || h != 2 {
     raise Failure::Failure("BMP dimensions wrong")
   }
 
   let tga = make_test_tga()
-  let (w2, h2, _fmt2) = image_dimensions(tga)
+  let (w2, h2, _fmt2) = @image.image_dimensions(tga)
   if w2 != 2 || h2 != 2 {
     raise Failure::Failure("TGA dimensions wrong")
   }
 
   let qoi = make_test_qoi()
-  let (w3, h3, _fmt3) = image_dimensions(qoi)
+  let (w3, h3, _fmt3) = @image.image_dimensions(qoi)
   if w3 != 2 || h3 != 2 {
     raise Failure::Failure("QOI dimensions wrong")
   }
 
   let png = make_test_png()
-  let (w4, h4, _fmt4) = image_dimensions(png)
+  let (w4, h4, _fmt4) = @image.image_dimensions(png)
   if w4 != 2 || h4 != 2 {
     raise Failure::Failure("PNG dimensions wrong")
   }
@@ -380,7 +380,7 @@ test "image_dimensions_fast" {
 test "to_rgba8_conversion" {
   let data = make_test_bmp()
   // Decode as BMP (outputs RGB8 for 24-bit)
-  let img = decode_bmp(data)
+  let img = @image.decode_bmp(data)
   if img.width != 2 || img.height != 2 {
     raise Failure::Failure("BMP decode failed")
   }
@@ -433,11 +433,11 @@ fn make_real_bmp32() -> Bytes {
 
 ///|
 test "decode_real_bmp32_alpha" {
-  let img = decode_bmp(make_real_bmp32())
+  let img = @image.decode_bmp(make_real_bmp32())
   check_dims(img, 6, 4)
   // Output format is RGBA8 from 32-bit BGRA decoder
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   // Bottom-up BMP: bottom row in file is alpha gradient (output y=3)
@@ -471,10 +471,10 @@ fn make_real_tga_rle() -> Bytes {
 
 ///|
 test "decode_real_tga_rle" {
-  let img = decode_tga(make_real_tga_rle())
+  let img = @image.decode_tga(make_real_tga_rle())
   check_dims(img, 4, 2)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   // Bottom-left origin: bottom row stored first (Blue, White)
@@ -506,7 +506,7 @@ fn make_real_tga_top() -> Bytes {
 
 ///|
 test "decode_real_tga_top_origin" {
-  let img = decode_tga(make_real_tga_top())
+  let img = @image.decode_tga(make_real_tga_top())
   check_dims(img, 4, 2)
   // Top-left origin: row 0 stored first (Red, Green), row 1 (Blue, White)
   check_pixel(img, 0, 0, 255, 0, 0, 255)
@@ -542,10 +542,10 @@ fn make_real_qoi_rgba() -> Bytes {
 
 ///|
 test "decode_real_qoi_rgba" {
-  let img = decode_qoi(make_real_qoi_rgba())
+  let img = @image.decode_qoi(make_real_qoi_rgba())
   check_dims(img, 8, 4)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   // Row 0: gradient of R from 0→252 with G=0,B=0
@@ -581,10 +581,10 @@ fn make_real_png_rgb_sub() -> Bytes {
 
 ///|
 test "decode_real_png_rgb_sub" {
-  let img = decode_png(make_real_png_rgb_sub())
+  let img = @image.decode_png(make_real_png_rgb_sub())
   check_dims(img, 6, 4)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   // Verify non-trivial pixels from Sub filter decoded image
@@ -619,10 +619,10 @@ fn make_real_png_rgba_paeth() -> Bytes {
 
 ///|
 test "decode_real_png_rgba_paeth" {
-  let img = decode_png(make_real_png_rgba_paeth())
+  let img = @image.decode_png(make_real_png_rgba_paeth())
   check_dims(img, 5, 5)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   // Verify Paeth filter decoded correctly
@@ -653,11 +653,11 @@ fn make_real_png_indexed() -> Bytes {
 
 ///|
 test "decode_real_png_indexed" {
-  let img = decode_png(make_real_png_indexed())
+  let img = @image.decode_png(make_real_png_indexed())
   check_dims(img, 4, 4)
   // Indexed PNG should output RGBA8 after palette expansion
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format from indexed PNG")
   }
   // Palette: {0: FF0000 (Red), 1: 00FF00 (Green), 2: 0000FF (Blue), 3: FFFFFF (White)}
@@ -685,10 +685,10 @@ fn make_real_png_graya() -> Bytes {
 
 ///|
 test "decode_real_png_graya" {
-  let img = decode_png(make_real_png_graya())
+  let img = @image.decode_png(make_real_png_graya())
   check_dims(img, 4, 4)
   match img.format {
-    PixelFormat::GrayA8 => ()
+    @image.PixelFormat::GrayA8 => ()
     _ => raise Failure::Failure("Expected GrayA8 format")
   }
   // (0,0): gray=0, alpha=0 → black, transparent
@@ -711,14 +711,14 @@ test "decode_real_png_graya" {
 test "error_empty_data" {
   // Empty data should raise Failure
   try {
-    let _ = decode(Bytes::new(0))
+    let _ = @image.decode(Bytes::new(0))
     raise Failure::Failure("Expected failure for empty data")
   } catch {
     _ => ()
   }
   // Too-small data should not be detected
   let small = make_bytes([0x00, 0x00, 0x00, 0x00])
-  match detect_format(small) {
+  match @image.detect_format(small) {
     None => ()
     Some(_) => raise Failure::Failure("Small data should not match any format")
   }
@@ -729,7 +729,7 @@ test "error_empty_data" {
 test "error_invalid_magic" {
   // Invalid PNG signature (last byte corrupted)
   try {
-    let _ = decode_png(
+    let _ = @image.decode_png(
       make_bytes([
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0B, 0x00, 0x00, 0x00, 0x0D, 0x49,
         0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x08, 0x00,
@@ -744,7 +744,7 @@ test "error_invalid_magic" {
 
   // Invalid QOI magic "qoig"
   try {
-    let _ = decode_qoi(
+    let _ = @image.decode_qoi(
       make_bytes([
         0x71, 0x6F, 0x69, 0x67, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x03,
         0x00,
@@ -757,7 +757,7 @@ test "error_invalid_magic" {
 
   // Invalid BMP magic "BB"
   try {
-    let _ = decode_bmp(
+    let _ = @image.decode_bmp(
       make_bytes([
         0x42, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00, 0x00,
@@ -774,7 +774,7 @@ test "error_invalid_magic" {
 test "error_truncated_headers" {
   // BMP: too small for DIB header
   try {
-    let _ = decode_bmp(
+    let _ = @image.decode_bmp(
       make_bytes([
         0x42, 0x4D, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00,
         0x00, 0x28, 0x00, 0x00, 0x00,
@@ -787,7 +787,7 @@ test "error_truncated_headers" {
 
   // TGA: needs 18 bytes minimum
   try {
-    let _ = decode_tga(make_bytes([0x00, 0x00, 0x02]))
+    let _ = @image.decode_tga(make_bytes([0x00, 0x00, 0x02]))
     raise Failure::Failure("Expected failure for truncated TGA")
   } catch {
     _ => ()
@@ -795,7 +795,7 @@ test "error_truncated_headers" {
 
   // QOI: needs at least 22 bytes
   try {
-    let _ = decode_qoi(make_bytes([0x71, 0x6F, 0x69, 0x66]))
+    let _ = @image.decode_qoi(make_bytes([0x71, 0x6F, 0x69, 0x66]))
     raise Failure::Failure("Expected failure for truncated QOI")
   } catch {
     _ => ()
@@ -803,7 +803,7 @@ test "error_truncated_headers" {
 
   // PNG: needs at least 8 bytes for signature
   try {
-    let _ = decode_png(make_bytes([0x89, 0x50, 0x4E, 0x47]))
+    let _ = @image.decode_png(make_bytes([0x89, 0x50, 0x4E, 0x47]))
     raise Failure::Failure("Expected failure for truncated PNG")
   } catch {
     _ => ()
@@ -815,7 +815,7 @@ test "error_truncated_headers" {
 test "error_invalid_parameters" {
   // BMP: unsupported bit depth bpp=0
   try {
-    let _ = decode_bmp(
+    let _ = @image.decode_bmp(
       make_bytes([
         0x42, 0x4D, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00,
         0x00, 0x28, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
@@ -831,7 +831,7 @@ test "error_invalid_parameters" {
 
   // TGA: unsupported image type=0
   try {
-    let _ = decode_tga(
+    let _ = @image.decode_tga(
       make_bytes([
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
         0x00, 0x02, 0x00, 0x18, 0x20,
@@ -844,7 +844,7 @@ test "error_invalid_parameters" {
 
   // TGA: unsupported pixel depth=7
   try {
-    let _ = decode_tga(
+    let _ = @image.decode_tga(
       make_bytes([
         0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
         0x00, 0x02, 0x00, 0x07, 0x20,
@@ -857,7 +857,7 @@ test "error_invalid_parameters" {
 
   // BMP: zero dimensions
   try {
-    let _ = decode_bmp(
+    let _ = @image.decode_bmp(
       make_bytes([
         0x42, 0x4D, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00,
         0x00, 0x28, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -873,7 +873,7 @@ test "error_invalid_parameters" {
 
   // QOI: invalid channel count (5)
   try {
-    let _ = decode_qoi(
+    let _ = @image.decode_qoi(
       make_bytes([
         0x71, 0x6F, 0x69, 0x66, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x05,
         0x00,
@@ -890,7 +890,7 @@ test "error_invalid_parameters" {
 test "error_truncated_pixel_data" {
   // BMP: header OK but no pixel data follows
   try {
-    let _ = decode_bmp(
+    let _ = @image.decode_bmp(
       make_bytes([
         0x42, 0x4D, 0x46, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00,
         0x00, 0x28, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
@@ -906,7 +906,7 @@ test "error_truncated_pixel_data" {
 
   // TGA: header OK but no pixel data
   try {
-    let _ = decode_tga(
+    let _ = @image.decode_tga(
       make_bytes([
         0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
         0x00, 0x02, 0x00, 0x18, 0x20,
@@ -923,7 +923,7 @@ test "error_truncated_pixel_data" {
 test "error_invalid_png_structure" {
   // PNG: truncated before IHDR (only length field, no type/data)
   try {
-    let _ = decode_png(
+    let _ = @image.decode_png(
       make_bytes([
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
       ]),
@@ -935,7 +935,7 @@ test "error_invalid_png_structure" {
 
   // PNG: IHDR present but no IDAT (only IHDR + IEND)
   try {
-    let _ = decode_png(
+    let _ = @image.decode_png(
       make_bytes([
         0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49,
         0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x08, 0x00,
@@ -954,7 +954,7 @@ test "error_invalid_png_structure" {
 test "error_tga_rle_overflow" {
   // TGA RLE: packet count (128) exceeds image pixel count (4)
   try {
-    let _ = decode_tga(
+    let _ = @image.decode_tga(
       make_bytes([
         0x00, 0x00, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
         0x00, 0x02, 0x00, 0x18, 0x20, 0xFF, 0x00, 0x00, 0xFF,
@@ -974,14 +974,14 @@ test "error_unsupported_format" {
     0x00, 0x00, 0xFF, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C,
     0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
   ])
-  if is_supported_format(junk) {
+  if @image.is_supported_format(junk) {
     raise Failure::Failure(
       "Unrecognized bytes should not be detected as supported",
     )
   }
   // Unified decode should also fail
   try {
-    let _ = decode(junk)
+    let _ = @image.decode(junk)
     raise Failure::Failure("Expected failure for unrecognized bytes")
   } catch {
     _ => ()
@@ -1006,10 +1006,10 @@ fn make_test_gif_2x2() -> Bytes {
 
 ///|
 test "decode_gif_2x2" {
-  let img = decode_gif(make_test_gif_2x2())
+  let img = @image.decode_gif(make_test_gif_2x2())
   check_dims(img, 2, 2)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format for GIF")
   }
   // Row 0: Red, Blue
@@ -1024,12 +1024,12 @@ test "decode_gif_2x2" {
 ///|
 test "detect_gif_format" {
   let gif_data = make_test_gif_2x2()
-  match detect_format(gif_data) {
-    Some(ImageFormat::GIF) => ()
+  match @image.detect_format(gif_data) {
+    Some(@image.ImageFormat::GIF) => ()
     _ => raise Failure::Failure("Expected GIF format")
   }
   // Test unified decode
-  let img = decode(gif_data)
+  let img = @image.decode(gif_data)
   check_dims(img, 2, 2)
   println("GIF format detection test passed!")
 }
@@ -1037,12 +1037,12 @@ test "detect_gif_format" {
 ///|
 test "gif_dimensions_fast" {
   let gif_data = make_test_gif_2x2()
-  let (w, h, fmt) = image_dimensions(gif_data)
+  let (w, h, fmt) = @image.image_dimensions(gif_data)
   if w != 2 || h != 2 {
     raise Failure::Failure("Expected 2x2, got \{w}x\{h}")
   }
   match fmt {
-    ImageFormat::GIF => ()
+    @image.ImageFormat::GIF => ()
     _ => raise Failure::Failure("Expected GIF format")
   }
   println("GIF dimensions test passed!")
@@ -1064,7 +1064,7 @@ fn make_test_gif_8x8() -> Bytes {
 
 ///|
 test "decode_gif_8x8" {
-  let img = decode_gif(make_test_gif_8x8())
+  let img = @image.decode_gif(make_test_gif_8x8())
   check_dims(img, 8, 8)
   // Checkerboard: 2x2 blocks of black and white
   check_pixel(img, 0, 0, 255, 255, 255, 255) // white block
@@ -1116,8 +1116,8 @@ fn make_test_jpg_4x4() -> Bytes {
 
 ///|
 test "detect_jpeg_format" {
-  match detect_format(make_test_jpg_4x4()) {
-    Some(ImageFormat::JPEG) => ()
+  match @image.detect_format(make_test_jpg_4x4()) {
+    Some(@image.ImageFormat::JPEG) => ()
     _ => raise Failure::Failure("Expected JPEG format detection")
   }
   println("JPEG format detection test passed!")
@@ -1125,7 +1125,7 @@ test "detect_jpeg_format" {
 
 ///|
 test "decode_jpeg_basic" {
-  let img = decode_jpeg(make_test_jpg_4x4())
+  let img = @image.decode_jpeg(make_test_jpg_4x4())
   check_dims(img, 4, 4)
   println("JPEG basic decode test passed!")
 }

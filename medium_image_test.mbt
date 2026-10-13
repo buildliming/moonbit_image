@@ -7,7 +7,7 @@
 // Helper: compute pixel checksum for verification
 
 ///|
-fn compute_checksum(img : Image) -> (Int, Int, Int) {
+fn compute_checksum(img : @image.Image) -> (Int, Int, Int) {
   let mut sum_r = 0
   let mut sum_g = 0
   let mut sum_b = 0
@@ -984,10 +984,10 @@ fn make_bmp_64_bmp() -> Bytes {
 
 ///|
 test "medium_bmp_64_bmp" {
-  let img = decode_bmp(make_bmp_64_bmp())
+  let img = @image.decode_bmp(make_bmp_64_bmp())
   check_dims(img, 64, 64)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   // Verify corner pixels
@@ -1975,10 +1975,10 @@ fn make_tga_64_tga() -> Bytes {
 
 ///|
 test "medium_tga_64_tga" {
-  let img = decode_tga(make_tga_64_tga())
+  let img = @image.decode_tga(make_tga_64_tga())
   check_dims(img, 64, 64)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   // Verify corner pixels
@@ -2900,10 +2900,10 @@ fn make_png_64_png() -> Bytes {
 
 ///|
 test "medium_png_64_png" {
-  let img = decode_png(make_png_64_png())
+  let img = @image.decode_png(make_png_64_png())
   check_dims(img, 64, 64)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   // Verify corner pixels
@@ -3946,10 +3946,10 @@ fn make_png_rgba_64_png() -> Bytes {
 
 ///|
 test "medium_png_rgba_64_png" {
-  let img = decode_png(make_png_rgba_64_png())
+  let img = @image.decode_png(make_png_rgba_64_png())
   check_dims(img, 64, 64)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   // Verify corner pixels
@@ -5252,10 +5252,10 @@ fn make_qoi_64_qoi() -> Bytes {
 
 ///|
 test "medium_qoi_64_qoi" {
-  let img = decode_qoi(make_qoi_64_qoi())
+  let img = @image.decode_qoi(make_qoi_64_qoi())
   check_dims(img, 64, 64)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   // Verify corner pixels

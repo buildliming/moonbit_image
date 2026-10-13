@@ -1,17 +1,19 @@
 # image - Pure MoonBit Image Decoding Library
 
-A comprehensive image decoding library written entirely in MoonBit, supporting multiple popular image formats with zero external dependencies.
+A pure MoonBit image decoding library with no external runtime dependencies.
+Supported inputs and intentional limits are listed below; unsupported variants
+and malformed data raise `Failure`.
 
 ## Supported Formats
 
-| Format | Status | Description |
-|--------|--------|-------------|
-| **BMP** | ✅ Complete | 1/4/8/24/32-bit, top-down & bottom-up |
-| **QOI** | ✅ Complete | RGB & RGBA, full spec compliance |
-| **TGA** | ✅ Complete | Uncompressed & RLE, 8/16/24/32-bit |
-| **PNG** | ✅ Complete | 1/2/4/8/16-bit input, grayscale/RGB/RGBA/indexed, tRNS, Adam7, full DEFLATE |
-| **GIF** | ✅ Complete | GIF87a/89a, LZW decompression, interlace, transparency |
-| **JPEG** | ✅ Baseline | Grayscale + YCbCr color, DCT/IDCT, Huffman |
+| Format | Supported input |
+|--------|-----------------|
+| **BMP** | 1/4/8-bit indexed, 24-bit BGR, 32-bit BGRA; RLE4/RLE8; selected 32-bit BITFIELDS layouts |
+| **QOI** | RGB/RGBA headers, all six chunk types, RGBA8 output |
+| **TGA** | Types 2/3/10/11, truecolor 16/24/32-bit and grayscale 8/16-bit, four image origins |
+| **PNG** | Standard color/depth combinations, tRNS, Adam7, stored/fixed/dynamic DEFLATE |
+| **GIF** | GIF87a/89a, LZW, interlace, transparency and composited animation frames |
+| **JPEG** | 8-bit SOF0 baseline, grayscale and conventional YCbCr 4:4:4/4:2:2/4:2:0 |
 
 ## Installation
 
@@ -27,7 +29,7 @@ fn main {
   let img = @image.decode(data)
   
   println("Image: \{img.width} x \{img.height}")
-  println("Format: \{pixel_format_name(img.format)}")
+  println("Format: \{@image.pixel_format_name(img.format)}")
   
   // Access individual pixels
   let pixel = img.get_pixel(10, 20)
@@ -49,7 +51,7 @@ pub fn decode_by_format(data : Bytes, format : ImageFormat) -> Image raise Failu
 // Detect format from magic bytes
 pub fn detect_format(data : Bytes) -> Option[ImageFormat]
 
-// Check if data matches any supported format
+// Check if the header resembles a supported format; this does not validate pixels
 pub fn is_supported_format(data : Bytes) -> Bool
 
 // Get human-readable pixel format name
@@ -122,8 +124,10 @@ shunge/image
 ├── comprehensive_test.mbt     # Comprehensive tests: GIF/JPEG features, animated GIF, errors
 ├── fuzz_test.mbt              # Fuzz testing (random bytes → decoders, must not crash)
 ├── roundtrip_test.mbt         # Round-trip encode/decode tests
-├── jpeg_real_test.mbt         # Real JPEG photo tests (11 photos, decode_jpeg verification)
-├── real_photo_test.mbt         # Real photo tests: BMP/PNG/TGA/QOI/GIF (54 multi-format tests)
+├── jpeg_real_test.mbt         # Embedded JPEG photographs with Pillow reference pixels
+├── real_photo_test.mbt        # Embedded photographs in BMP/PNG/TGA/QOI/GIF
+├── *_regression_test.mbt      # Format-specific independent pixel and malformed-input cases
+├── decoder_stability_test.mbt # Structured malformed-input stability checks
 │
 ├── example/                   # CLI example: image_info
 ├── tools/                     # Test image generation scripts
@@ -134,29 +138,41 @@ shunge/image
 
 ## Supported BMP Features
 
-- 32-bit BGRA (uncompressed)
+- DIB header sizes 40, 52, 56, 108 and 124 bytes
+- 32-bit BGRA (uncompressed and canonical byte-aligned BITFIELDS masks)
 - 24-bit BGR (uncompressed)
-- 8-bit indexed (with palette)
-- 4-bit indexed (with palette)
-- 1-bit monochrome
-- Top-down and bottom-up scan order
-- Automatic 4-byte row alignment handling
+- 1/4/8-bit indexed images, respecting `biClrUsed` and actual palette extent
+- RLE4/RLE8 encoded runs, absolute runs, deltas, word padding and end markers
+- Top-down and bottom-up uncompressed rows; compressed images must be bottom-up
+- Checked header/pixel offsets, planes, compression/depth combinations and row strides
+
+32-bit input preserves the stored alpha byte, including BI_RGB input. Pixels
+omitted by RLE deltas retain the existing transparent fill. Palette entries are
+opaque. BITMAPCOREHEADER/OS/2, 16-bit BMP, arbitrary BITFIELDS masks and embedded
+JPEG/PNG compression are not supported.
 
 ## Supported QOI Features
 
 - RGB (3-channel) and RGBA (4-channel)
 - All QOI chunk types: INDEX, DIFF, LUMA, RUN, RGB, RGBA
-- Full color hash cache implementation
-- sRGB and linear colorspace detection
+- The 64-entry color cache, channel wraparound and bounded run lengths
+- Header channel/colorspace validation and required eight-byte end marker
+- RGBA8 output regardless of the informative header channel count
+
+Colorspace metadata is accepted without performing a color conversion. Truncated
+chunks, runs beyond the declared dimensions and extra pixel chunks are rejected.
 
 ## Supported TGA Features
 
-- Type 2: Uncompressed true-color (24/32-bit)
-- Type 3: Uncompressed grayscale (8-bit)
-- Type 10: RLE compressed true-color (24/32-bit)
-- Type 11: RLE compressed grayscale (8-bit)
-- Top-left and bottom-left image origin
-- 16-bit A1R5G5B5 format support
+- Types 2/10: raw/RLE truecolor at 16/24/32 bits per pixel
+- Types 3/11: raw/RLE grayscale at 8 bits, or grayscale+alpha at 16 bits
+- All four horizontal/vertical origins, normalized to top-left output
+- 16-bit BGR555 with an optional one-bit attribute; truecolor output is RGBA8
+- Checked image ID/color-map extents, descriptors, packet sizes and pixel counts
+
+Color-mapped image types 1/9 and interleaved storage are not supported. An unused
+color map attached to a supported truecolor/grayscale image is skipped. TGA 2.0
+extension metadata and color correction are not interpreted.
 
 ## Supported PNG Features
 
@@ -186,27 +202,52 @@ a future extension to PixelFormat. Color management and APNG animation are not i
 - Global and local color tables
 - 4-pass interlacing
 - Transparency via Graphic Control Extension
+- Logical-screen composition, frame rectangles and disposal methods 0 through 3
+- Frame delays and NETSCAPE/ANIMEXTS loop metadata
 - Output format: RGBA8 (palette expansion)
+
+`decode_gif()` returns the first composited frame; `decode_gif_all()` returns
+composited frames and delays. Plain-text rendering is not supported. Invalid
+palettes, frame bounds, LZW streams, plain-text blocks and unsupported disposal
+methods raise `Failure`.
 
 ## Supported JPEG Features
 
 - Baseline JPEG (SOF0) with 8-bit precision
-- Grayscale (Gray8) and YCbCr color (RGB8) images
+- Grayscale (Gray8) and YCbCr color (RGB8) images in a single scan
 - Huffman-coded DC and AC coefficients with O(1) prefix table lookup
 - Zigzag deordering, dequantization, and IDCT
 - Sub-sampling: 4:4:4, 4:2:2, 4:2:0
 - Restart marker (RST) support
+- Grayscale sampling factors 1 through 4, normalized to noninterleaved blocks
+- APPn/COM metadata segments before or after the scan
+- Checked segment/table/scan structure, entropy padding and restart sequence
 - Output formats: Gray8 / RGB8
 
-### Limitations (Future Work)
+Three-component input uses conventional component IDs 1/2/3 for Y/Cb/Cr.
+Progressive, extended sequential, lossless, arithmetic-coded, CMYK/YCCK,
+Adobe RGB-transform and separate component scans are not supported. JPEG pixels
+can differ slightly from libjpeg/Pillow because of IDCT and color rounding.
 
-- JPEG progressive mode (baseline only)
+## Resource Limits
+
+Decoder dimensions and buffer sizes are checked before allocation. Each checked
+decoded pixel buffer is limited to 256 MiB (268,435,456 bytes); PNG also limits
+the expected filtered scanline buffer and inflation output. GIF animation output
+additionally limits the sum of retained full-canvas frame bytes to 256 MiB.
+
+These are per-buffer and GIF frame-storage limits, not a process-wide memory
+budget. Input bytes, temporary buffers, copies, JPEG component planes and later
+image transformations can consume additional memory. Exceeding a decoder limit
+raises `Failure`.
+
+## Other Limitations
+
 - Preserving 16-bit PNG output precision (PNG input is supported and reduced to 8-bit samples)
-- Lossless JPEG support
-- Arithmetic coding in JPEG
-- Ancillary chunk parsing (gAMA, cHRM, sRGB, etc.)
+- PNG color management (gAMA/cHRM/sRGB/ICC) and APNG animation
 - Streaming/incremental decode
 - Image encoders for PNG/JPEG/GIF/TGA (BMP and QOI encoding available)
+- Formats such as WebP, TIFF and AVIF
 
 ## License
 
@@ -214,36 +255,89 @@ MIT
 
 ## Testing
 
-The suite contains 306 tests, including 140 PNG regressions. Run all tests with:
+Run strict checks without warning suppression:
 
 ```bash
-moon test
+moon check --deny-warn
+moon fmt --check
+moon info
+git diff --exit-code -- pkg.generated.mbti
+moon test --deny-warn --target wasm-gc
+moon test --deny-warn --target js
+moon test --deny-warn --target native
 ```
 
-With MoonBit toolchains that report warning 25 (`test_unqualified_package`) for
-the existing test files, use `moon check --deny-warn --warn-list '-25'` and
-`moon test --warn-list '-25'`. The PNG regression files use explicit package imports.
+CI runs the wasm-gc, JavaScript and native targets on Linux. Compiler and core
+are pinned together to `0.10.14+7d59c7ec9`; the reference job uses Node.js 24,
+Python 3.12 and Pillow 12.3.0. Native tests require a supported local C toolchain.
 
-Tests cover:
-- **Basic decoding** (2×2 ~ 16×16): format-specific decoder correctness for BMP/TGA/QOI/PNG/GIF/JPEG
-- **Error handling** (14 tests): truncated data, invalid magic bytes, CRC mismatches, corrupted streams
-- **Fuzz testing** (9 tests): random byte sequences fed to each decoder — must not crash
-- **Round-trip tests** (17 tests): encode → decode → verify identity for BMP/QOI/TGA
-- **Medium images** (64×64): full pixel checksum verification for BMP/TGA/PNG/QOI
-- **Complex patterns** (128×128): checkerboard, noise, radial gradient, Mandelbrot fractal — stresses DEFLATE, RLE, and Huffman decoding
-- **Comprehensive format tests** (20 tests): PNG filters, multi-IDAT, Adam7, GIF interlace/transparency/animation, JPEG subsampling
-- **PNG regressions**: exact output bytes for all color/depth combinations, row padding, Adam7 and tRNS; malformed chunks, Huffman streams, block boundaries and decompression limits
-- **Real photo tests** (65 tests): embedded real-world photo thumbnails, verified via `decode_bmp()` / `decode_png()` / `decode_tga()` / `decode_qoi()` / `decode_gif()` / `decode_jpeg()` with pixel-accurate checksums. Covers landscape, realistic, complex, blurry, and texture photos (1080p–3840px originals)
-- **Large images** (up to 2048×2048): verified via Python/PIL reference decoder
+Tests cover exact decoded pixels, row padding, origins, palette/transparency
+handling, PNG filters/Adam7/DEFLATE, GIF composition, JPEG sampling/restarts,
+malformed structures, resource limits and deterministic input mutation. Existing
+round-trip and pattern tests complement independent reference cases.
 
-The PNG pixel and DEFLATE fixtures are independently generated using Python's
-standard library. Regenerate them with:
+The photographic test suites use embedded image bytes and Pillow-derived pixel
+expectations instead of decoder-derived checksums. Lossless comparisons are
+exact; JPEG comparisons allow a documented per-channel rounding tolerance.
+Regeneration also repairs invalid legacy QOI end markers.
+
+For a reusable comparison against an independent decoder, install Pillow and run:
+
+```bash
+python -m pip install Pillow==12.3.0
+python -B -m unittest discover -s tools -p test_pillow_reference.py
+python tools/verify_decoders.py
+python tools/verify_decoders.py --corpus /path/to/photos --max-side 128
+```
+
+The verifier builds the actual MoonBit decoder for JavaScript and compares its
+RGBA bytes against Pillow. Embedded photographic JPEGs and optional corpus files
+are first compared directly, preserving original dimensions and encoding
+features. Unsupported, unreadable or corrupt originals are recorded as failures;
+the verifier continues with other files and writes its report before returning
+a failure status. It also generates
+cases from those photographs and deterministic patterns across the six formats,
+including JPEG 4:4:4, 4:2:2 and 4:2:0. `--max-side` bounds the derived cases;
+original-file comparisons keep their full dimensions.
+
+`tools/pillow_reference.py` supplements Pillow for PNG normalization and
+transparency cases that Pillow's RGBA conversion does not preserve: 16-bit
+grayscale uses the high byte rather than clamping, and grayscale/RGB `tRNS`
+comparisons use original sample precision, masking unused key bits according to
+the PNG specification. These expectations come from an independent Python
+implementation of zlib inflation, PNG filters and Adam7 sample extraction,
+followed by specification-defined normalization; they never use MoonBit decoder
+output. The five Python oracle tests cover normalization, transparency precision,
+interlacing/filters, unused transparency bits and continued processing after bad
+original files.
+
+Lossless results must match exactly; JPEG allows at most three levels of error
+per channel. Sources, generated cases and the JSON report
+`_build/decoder-reference-results.json` remain local; no network is required.
+The report records the Pillow version, case dimensions and pixel errors. These
+cases complement the format-specific fixtures rather than establishing support
+for every variant of a format.
+
+Regenerate the independent fixtures from the repository root, then format and
+rerun the tests. PNG generators use Python's standard library; the remaining
+generators require Pillow:
 
 ```bash
 python tools/generate_png_regression_fixtures.py
 python tools/generate_png_deflate_fixtures.py
+python tools/generate_bmp_regression_fixtures.py
+python tools/generate_gif_regression_fixtures.py
+python tools/generate_jpeg_regression_fixtures.py
+python tools/generate_qoi_tga_fixtures.py
+python tools/generate_photo_references.py
 moon fmt
+moon test --deny-warn
 ```
+
+Some fixtures assert specification behavior that differs from Pillow: odd RLE4
+absolute runs are checked through equivalent uncompressed reference images;
+32-bit BMP alpha and skipped RLE pixels retain this library's documented behavior.
+These exceptions are identified in their generators.
 
 PNG behavior follows the [W3C PNG specification](https://www.w3.org/TR/png-3/),
 [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) and
@@ -253,5 +347,5 @@ PNG behavior follows the [W3C PNG specification](https://www.w3.org/TR/png-3/),
 
 This library aims to build out the MoonBit image processing ecosystem. Planned future additions:
 - Additional formats (WebP, TIFF, AVIF)
-- Image processing operations (resize, rotate, filters)
+- Additional image processing filters (resize and rotation already exist)
 - CLI/Web demo application

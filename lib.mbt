@@ -45,15 +45,15 @@ pub fn detect_format(data : Bytes) -> ImageFormat? {
     return Some(ImageFormat::BMP)
   }
 
+  // Prefer JPEG's signature to TGA's heuristic header match.
+  if data[0] == b'\xFF' && data[1] == b'\xD8' {
+    return Some(ImageFormat::JPEG)
+  }
+
   // TGA detection: check for type 2 footer first (most reliable),
   // then fall back to header heuristic
   if detect_tga(data) {
     return Some(ImageFormat::TGA)
-  }
-
-  // JPEG: FF D8 FF marker (check this last since FF D8 can appear in other binary data)
-  if data.length() >= 3 && data[0] == b'\xFF' && data[1] == b'\xD8' {
-    return Some(ImageFormat::JPEG)
   }
 
   None
@@ -68,13 +68,13 @@ fn detect_tga(data : Bytes) -> Bool {
 
   // Method 1: Check for TGA version 2 footer at end of file
   // Footer signature: "TRUEVISION-XFILE." at position len-18
-  let footer_sig = "TRUEVISION-XFILE."
+  let footer_sig = b"TRUEVISION-XFILE.\x00"
   let len = data.length()
   if len >= 26 {
     let footer_start = len - 18
     let mut matches = true
     for i = 0; i < 18; i = i + 1 {
-      if data[footer_start + i] != footer_sig[i].to_byte() {
+      if data[footer_start + i] != footer_sig[i] {
         matches = false
         break
       }
@@ -156,8 +156,8 @@ pub fn decode_by_format(
 pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
   match detect_format(data) {
     None => raise Failure::Failure("Unsupported or unknown image format")
-    Some(format) =>
-      match format {
+    Some(format) => {
+      let (width, height, result_format) = match format {
         ImageFormat::BMP => bmp_dimensions(data)
         ImageFormat::QOI => qoi_dimensions(data)
         ImageFormat::TGA => tga_dimensions(data)
@@ -168,6 +168,11 @@ pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
           (w, h, ImageFormat::JPEG)
         }
       }
+      if width <= 0 || height <= 0 {
+        raise Failure::Failure("Image: invalid header dimensions")
+      }
+      (width, height, result_format)
+    }
   }
 }
 
@@ -224,6 +229,9 @@ fn png_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
     raise Failure::Failure("PNG: file too small for IHDR reading")
   }
   // Skip signature (8), read length (4), verify "IHDR" (4)
+  if read_u32_be(data, 8) != 13 {
+    raise Failure::Failure("PNG: invalid IHDR length")
+  }
   if data[12] != b'I' ||
     data[13] != b'H' ||
     data[14] != b'D' ||

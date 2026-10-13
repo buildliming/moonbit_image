@@ -49,27 +49,27 @@ pub struct Color {
 ///|
 /// Constructors and utilities for Color
 pub fn Color::default() -> Color {
-  { r: 0, g: 0, b: 0, a: 255 }
+  { r: 0, g: 0, b: 0, a: 255, }
 }
 
 ///|
 pub fn Color::new(r : Int, g : Int, b : Int, a : Int) -> Color {
-  { r, g, b, a }
+  { r, g, b, a, }
 }
 
 ///|
 pub fn Color::from_rgb(r : Int, g : Int, b : Int) -> Color {
-  { r, g, b, a: 255 }
+  { r, g, b, a: 255, }
 }
 
 ///|
 pub fn Color::from_gray(v : Int) -> Color {
-  { r: v, g: v, b: v, a: 255 }
+  { r: v, g: v, b: v, a: 255, }
 }
 
 ///|
 pub fn Color::with_alpha(self : Color, a : Int) -> Color {
-  { r: self.r, g: self.g, b: self.b, a }
+  { r: self.r, g: self.g, b: self.b, a, }
 }
 
 ///|
@@ -102,7 +102,7 @@ pub fn Image::new(
   format : PixelFormat,
   data : Bytes,
 ) -> Image {
-  { width, height, format, data }
+  { width, height, format, data, }
 }
 
 ///|
@@ -248,7 +248,7 @@ pub fn AnimatedImage::new(
   height : Int,
   loop_count : Int,
 ) -> AnimatedImage {
-  { frames, delays, width, height, loop_count }
+  { frames, delays, width, height, loop_count, }
 }
 
 ///|
@@ -271,7 +271,7 @@ priv struct BitReader {
 
 ///|
 fn BitReader::new(data : Bytes) -> BitReader {
-  { data, byte_pos: 0, bit_pos: 0 }
+  { data, byte_pos: 0, bit_pos: 0, }
 }
 
 ///|
@@ -309,7 +309,7 @@ fn BitReader::read_bits(
     result_pos = result_pos + take
     needed = needed - take
     if take == bits_left {
-      reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0 }
+      reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0, }
     } else {
       reader = {
         data: reader.data,
@@ -333,7 +333,7 @@ fn BitReader::read_bits(
     result = result | (byte_val << result_pos)
     result_pos = result_pos + 8
     needed = needed - 8
-    reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0 }
+    reader = { data: reader.data, byte_pos: reader.byte_pos + 1, bit_pos: 0, }
   }
 
   // Read remaining bits from next byte (LSBs of that byte)
@@ -346,7 +346,7 @@ fn BitReader::read_bits(
     let byte = reader.data[reader.byte_pos].to_int()
     let val = byte & ((1 << needed) - 1)
     result = result | (val << result_pos)
-    reader = { data: reader.data, byte_pos: reader.byte_pos, bit_pos: needed }
+    reader = { data: reader.data, byte_pos: reader.byte_pos, bit_pos: needed, }
   }
 
   (reader, result)
@@ -358,7 +358,7 @@ fn BitReader::align_to_byte(self : BitReader) -> BitReader {
   if self.bit_pos == 0 {
     self
   } else {
-    { data: self.data, byte_pos: self.byte_pos + 1, bit_pos: 0 }
+    { data: self.data, byte_pos: self.byte_pos + 1, bit_pos: 0, }
   }
 }
 
@@ -375,6 +375,6 @@ fn BitReader::read_bytes(
     raise Failure::Failure("BitReader: unexpected end of data")
   }
   let slice = self.data[self.byte_pos:self.byte_pos + n].to_owned()
-  let new_reader = { data: self.data, byte_pos: self.byte_pos + n, bit_pos: 0 }
+  let new_reader = { data: self.data, byte_pos: self.byte_pos + n, bit_pos: 0, }
   (new_reader, slice)
 }

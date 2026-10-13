@@ -1,7 +1,7 @@
 // Complex image tests (128x128) - Auto-generated
 
 ///|
-fn complex_checksum(img : Image) -> (Int, Int, Int) {
+fn complex_checksum(img : @image.Image) -> (Int, Int, Int) {
   let mut sr = 0
   let mut sg = 0
   let mut sb = 0
@@ -3812,10 +3812,10 @@ fn make_bmp_checkerboard_128() -> Bytes {
 
 ///|
 test "complex_bmp_checkerboard_128" {
-  let img = decode_bmp(make_bmp_checkerboard_128())
+  let img = @image.decode_bmp(make_bmp_checkerboard_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 255, 255, 255, 255)
@@ -3923,10 +3923,10 @@ fn make_png_checkerboard_128() -> Bytes {
 
 ///|
 test "complex_png_checkerboard_128" {
-  let img = decode_png(make_png_checkerboard_128())
+  let img = @image.decode_png(make_png_checkerboard_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 255, 255, 255, 255)
@@ -7746,10 +7746,10 @@ fn make_tga_checkerboard_128() -> Bytes {
 
 ///|
 test "complex_tga_checkerboard_128" {
-  let img = decode_tga(make_tga_checkerboard_128())
+  let img = @image.decode_tga(make_tga_checkerboard_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 255, 255, 255, 255)
@@ -12829,10 +12829,10 @@ fn make_qoi_checkerboard_128() -> Bytes {
 
 ///|
 test "complex_qoi_checkerboard_128" {
-  let img = decode_qoi(make_qoi_checkerboard_128())
+  let img = @image.decode_qoi(make_qoi_checkerboard_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 255, 255, 255, 255)
@@ -16655,10 +16655,10 @@ fn make_bmp_radial_128() -> Bytes {
 
 ///|
 test "complex_bmp_radial_128" {
-  let img = decode_bmp(make_bmp_radial_128())
+  let img = @image.decode_bmp(make_bmp_radial_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 255, 0, 128, 255)
@@ -17422,10 +17422,10 @@ fn make_png_radial_128() -> Bytes {
 
 ///|
 test "complex_png_radial_128" {
-  let img = decode_png(make_png_radial_128())
+  let img = @image.decode_png(make_png_radial_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 255, 0, 128, 255)
@@ -21245,10 +21245,10 @@ fn make_tga_radial_128() -> Bytes {
 
 ///|
 test "complex_tga_radial_128" {
-  let img = decode_tga(make_tga_radial_128())
+  let img = @image.decode_tga(make_tga_radial_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 255, 0, 128, 255)
@@ -26328,10 +26328,10 @@ fn make_qoi_radial_128() -> Bytes {
 
 ///|
 test "complex_qoi_radial_128" {
-  let img = decode_qoi(make_qoi_radial_128())
+  let img = @image.decode_qoi(make_qoi_radial_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 255, 0, 128, 255)
@@ -30154,10 +30154,10 @@ fn make_bmp_noise_128() -> Bytes {
 
 ///|
 test "complex_bmp_noise_128" {
-  let img = decode_bmp(make_bmp_noise_128())
+  let img = @image.decode_bmp(make_bmp_noise_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 0, 0, 0, 255)
@@ -33992,10 +33992,10 @@ fn make_png_noise_128() -> Bytes {
 
 ///|
 test "complex_png_noise_128" {
-  let img = decode_png(make_png_noise_128())
+  let img = @image.decode_png(make_png_noise_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 0, 0, 0, 255)
@@ -37815,10 +37815,10 @@ fn make_tga_noise_128() -> Bytes {
 
 ///|
 test "complex_tga_noise_128" {
-  let img = decode_tga(make_tga_noise_128())
+  let img = @image.decode_tga(make_tga_noise_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 0, 0, 0, 255)
@@ -42898,10 +42898,10 @@ fn make_qoi_noise_128() -> Bytes {
 
 ///|
 test "complex_qoi_noise_128" {
-  let img = decode_qoi(make_qoi_noise_128())
+  let img = @image.decode_qoi(make_qoi_noise_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 0, 0, 0, 255)
@@ -46724,10 +46724,10 @@ fn make_bmp_mandelbrot_128() -> Bytes {
 
 ///|
 test "complex_bmp_mandelbrot_128" {
-  let img = decode_bmp(make_bmp_mandelbrot_128())
+  let img = @image.decode_bmp(make_bmp_mandelbrot_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 4, 12, 28, 255)
@@ -46932,10 +46932,10 @@ fn make_png_mandelbrot_128() -> Bytes {
 
 ///|
 test "complex_png_mandelbrot_128" {
-  let img = decode_png(make_png_mandelbrot_128())
+  let img = @image.decode_png(make_png_mandelbrot_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGB8 => ()
+    @image.PixelFormat::RGB8 => ()
     _ => raise Failure::Failure("Expected RGB8 format")
   }
   check_pixel(img, 0, 0, 4, 12, 28, 255)
@@ -50755,10 +50755,10 @@ fn make_tga_mandelbrot_128() -> Bytes {
 
 ///|
 test "complex_tga_mandelbrot_128" {
-  let img = decode_tga(make_tga_mandelbrot_128())
+  let img = @image.decode_tga(make_tga_mandelbrot_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 4, 12, 28, 255)
@@ -55838,10 +55838,10 @@ fn make_qoi_mandelbrot_128() -> Bytes {
 
 ///|
 test "complex_qoi_mandelbrot_128" {
-  let img = decode_qoi(make_qoi_mandelbrot_128())
+  let img = @image.decode_qoi(make_qoi_mandelbrot_128())
   check_dims(img, 128, 128)
   match img.format {
-    PixelFormat::RGBA8 => ()
+    @image.PixelFormat::RGBA8 => ()
     _ => raise Failure::Failure("Expected RGBA8 format")
   }
   check_pixel(img, 0, 0, 4, 12, 28, 255)

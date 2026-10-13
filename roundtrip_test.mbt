@@ -13,11 +13,11 @@
 test "roundtrip_bmp_rgb" {
   // Use the existing test BMP data (4x4 gradient) from make_test_bmp
   // First decode a known BMP to get an Image
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   // Re-encode
-  let encoded = encode_bmp(img)
+  let encoded = @image.encode_bmp(img)
   // Decode again
-  let decoded = decode_bmp(encoded)
+  let decoded = @image.decode_bmp(encoded)
 
   // Verify same dimensions
   if decoded.width != img.width || decoded.height != img.height {
@@ -45,9 +45,9 @@ test "roundtrip_bmp_rgb" {
 ///|
 /// Round-trip with alpha: decode RGBA BMP, re-encode, verify alpha preserved
 test "roundtrip_bmp_rgba" {
-  let img = decode_bmp(make_real_bmp32())
-  let encoded = encode_bmp(img)
-  let decoded = decode_bmp(encoded)
+  let img = @image.decode_bmp(make_real_bmp32())
+  let encoded = @image.encode_bmp(img)
+  let decoded = @image.decode_bmp(encoded)
 
   if decoded.width != img.width || decoded.height != img.height {
     raise Failure::Failure("BMP RGBA round-trip: dimension mismatch")
@@ -67,9 +67,9 @@ test "roundtrip_bmp_rgba" {
 ///|
 /// BMP encode-decode 1x1 TGA image (decode TGA, encode as BMP, verify)
 test "roundtrip_tga_to_bmp" {
-  let img = decode_tga(make_test_tga())
-  let encoded = encode_bmp(img)
-  let decoded = decode_bmp(encoded)
+  let img = @image.decode_tga(make_test_tga())
+  let encoded = @image.encode_bmp(img)
+  let decoded = @image.decode_bmp(encoded)
 
   if decoded.width != img.width || decoded.height != img.height {
     raise Failure::Failure("TGA→BMP round-trip: dimension mismatch")
@@ -94,9 +94,9 @@ test "roundtrip_tga_to_bmp" {
 ///|
 /// Round-trip: decode QOI, re-encode, decode again — verify lossless
 test "roundtrip_qoi_rgb" {
-  let img = decode_qoi(make_test_qoi())
-  let encoded = encode_qoi(img)
-  let decoded = decode_qoi(encoded)
+  let img = @image.decode_qoi(make_test_qoi())
+  let encoded = @image.encode_qoi(img)
+  let decoded = @image.decode_qoi(encoded)
 
   if decoded.width != img.width || decoded.height != img.height {
     raise Failure::Failure("QOI round-trip: dimension mismatch")
@@ -116,9 +116,9 @@ test "roundtrip_qoi_rgb" {
 ///|
 /// Round-trip with alpha: decode QOI RGBA, re-encode, verify
 test "roundtrip_qoi_rgba" {
-  let img = decode_qoi(make_real_qoi_rgba())
-  let encoded = encode_qoi(img)
-  let decoded = decode_qoi(encoded)
+  let img = @image.decode_qoi(make_real_qoi_rgba())
+  let encoded = @image.encode_qoi(img)
+  let decoded = @image.decode_qoi(encoded)
 
   if decoded.width != img.width || decoded.height != img.height {
     raise Failure::Failure("QOI RGBA round-trip: dimension mismatch")
@@ -137,9 +137,9 @@ test "roundtrip_qoi_rgba" {
 ///|
 /// QOI encode-decode a BMP source (cross-format round-trip)
 test "roundtrip_bmp_to_qoi" {
-  let img = decode_bmp(make_test_bmp())
-  let encoded = encode_qoi(img)
-  let decoded = decode_qoi(encoded)
+  let img = @image.decode_bmp(make_test_bmp())
+  let encoded = @image.encode_qoi(img)
+  let decoded = @image.decode_qoi(encoded)
 
   if decoded.width != img.width || decoded.height != img.height {
     raise Failure::Failure("BMP→QOI round-trip: dimension mismatch")
@@ -185,7 +185,7 @@ test "edge_bmp_1x1" {
     // Pixel data (BGR, padded to 4-byte boundary)
      0x00, 0x00, 0xFF, 0x00, // BGR: B=0 G=0 R=255 + padding
   ])
-  let img = decode_bmp(data)
+  let img = @image.decode_bmp(data)
   check_dims(img, 1, 1)
   check_pixel(img, 0, 0, 255, 0, 0, 255)
 }
@@ -215,7 +215,7 @@ test "edge_bmp_odd_width" {
     // Padding
      0x00, 0x00, 0x00,
   ])
-  let img = decode_bmp(data)
+  let img = @image.decode_bmp(data)
   check_dims(img, 3, 1)
   check_pixel(img, 0, 0, 255, 0, 0, 255)
   check_pixel(img, 1, 0, 0, 255, 0, 255)
@@ -242,7 +242,7 @@ test "edge_tga_16bit" {
     // Value 0xFFFF = opaque white
      0xFF, 0xFF,
   ])
-  let img = decode_tga(data)
+  let img = @image.decode_tga(data)
   check_dims(img, 1, 1)
   check_pixel(img, 0, 0, 255, 255, 255, 255)
 }
@@ -254,7 +254,7 @@ test "edge_tga_16bit" {
 ///|
 /// Flip horizontal then flip again = identity
 test "transform_flip_horizontal_idempotent" {
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   let flipped = img.flip_horizontal()
   let double = flipped.flip_horizontal()
   // All pixels should match original
@@ -272,7 +272,7 @@ test "transform_flip_horizontal_idempotent" {
 ///|
 /// Flip vertical then flip again = identity
 test "transform_flip_vertical_idempotent" {
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   let flipped = img.flip_vertical()
   let double = flipped.flip_vertical()
   for y = 0; y < img.height; y = y + 1 {
@@ -289,7 +289,7 @@ test "transform_flip_vertical_idempotent" {
 ///|
 /// Rotate 90 four times = identity
 test "transform_rotate_90_quad" {
-  let img = decode_qoi(make_test_qoi())
+  let img = @image.decode_qoi(make_test_qoi())
   let r1 = img.rotate_90()
   let r2 = r1.rotate_90()
   let r3 = r2.rotate_90()
@@ -310,7 +310,7 @@ test "transform_rotate_90_quad" {
 ///|
 /// Crop extracts correct sub-region
 test "transform_crop" {
-  let img = decode_qoi(make_test_qoi())
+  let img = @image.decode_qoi(make_test_qoi())
   let cropped = img.crop(0, 0, 1, 1)
   check_dims(cropped, 1, 1)
   // Top-left pixel should match original top-left
@@ -324,7 +324,7 @@ test "transform_crop" {
 ///|
 /// Resize nearest: resize to same size = identity
 test "transform_resize_nearest_identity" {
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   let resized = img.resize_nearest(img.width, img.height)
   check_dims(resized, img.width, img.height)
   for y = 0; y < img.height; y = y + 1 {
@@ -341,7 +341,7 @@ test "transform_resize_nearest_identity" {
 ///|
 /// Resize bilinear: resize to same size preserves pixels
 test "transform_resize_bilinear_identity" {
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   let resized = img.resize_bilinear(img.width, img.height)
   check_dims(resized, img.width, img.height)
   for y = 0; y < img.height; y = y + 1 {
@@ -358,7 +358,7 @@ test "transform_resize_bilinear_identity" {
 ///|
 /// Resize nearest to larger size
 test "transform_resize_nearest_upscale" {
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   let resized = img.resize_nearest(img.width * 2, img.height * 2)
   check_dims(resized, img.width * 2, img.height * 2)
   // Top-left quadrant should all be original [0,0] pixel
@@ -372,7 +372,7 @@ test "transform_resize_nearest_upscale" {
 ///|
 /// Resize bilinear to larger size
 test "transform_resize_bilinear_upscale" {
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   let resized = img.resize_bilinear(img.width * 2, img.height * 2)
   check_dims(resized, img.width * 2, img.height * 2)
   // Should produce valid colors — just check no crash
@@ -388,19 +388,19 @@ test "transform_resize_bilinear_upscale" {
 ///|
 /// encode() dispatches correctly: detect format from BMP data, encode via unified API
 test "encode_unified_bmp" {
-  let img = decode_bmp(make_test_bmp())
+  let img = @image.decode_bmp(make_test_bmp())
   // Test that encode_bmp works (encode() with BMP format would need enum, use direct fn)
-  let encoded = encode_bmp(img)
-  let decoded = decode_bmp(encoded)
+  let encoded = @image.encode_bmp(img)
+  let decoded = @image.decode_bmp(encoded)
   check_dims(decoded, img.width, img.height)
 }
 
 ///|
 /// encode() for QOI works correctly
 test "encode_unified_qoi" {
-  let img = decode_qoi(make_test_qoi())
-  let encoded = encode_qoi(img)
-  let decoded = decode_qoi(encoded)
+  let img = @image.decode_qoi(make_test_qoi())
+  let encoded = @image.encode_qoi(img)
+  let decoded = @image.decode_qoi(encoded)
   check_dims(decoded, img.width, img.height)
 }
 
@@ -409,7 +409,10 @@ test "encode_unified_qoi" {
 test "encode_supported_check" {
   // BMP and QOI encoding are known to work (tested above)
   // PNG/JPEG encoding are not implemented — verify detect_format works for them
-  let formats = [detect_format(make_test_bmp()), detect_format(make_test_qoi())]
+  let formats = [
+    @image.detect_format(make_test_bmp()),
+    @image.detect_format(make_test_qoi()),
+  ]
   // Both should be detected
   match formats[0] {
     None => raise Failure::Failure("BMP format should be detected")
@@ -426,9 +429,9 @@ test "encode_supported_check" {
 /// (PNG encoding not supported, but BMP/QOI encoding is verified above)
 test "encode_roundtrip_chain" {
   // Full chain: decode BMP → encode QOI → decode QOI → verify pixel
-  let img = decode_bmp(make_test_bmp())
-  let qoi_bytes = encode_qoi(img)
-  let decoded = decode_qoi(qoi_bytes)
+  let img = @image.decode_bmp(make_test_bmp())
+  let qoi_bytes = @image.encode_qoi(img)
+  let decoded = @image.decode_qoi(qoi_bytes)
   check_dims(decoded, img.width, img.height)
   let orig = img.get_pixel(0, 0)
   let recovered = decoded.get_pixel(0, 0)
