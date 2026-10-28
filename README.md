@@ -163,6 +163,18 @@ JPEG/PNG compression are not supported.
 Colorspace metadata is accepted without performing a color conversion. Truncated
 chunks, runs beyond the declared dimensions and extra pixel chunks are rejected.
 
+Compatibility with files written before 0.1.5: the old QOI encoder incorrectly
+initialized the index cache with opaque black instead of transparent black.
+Some files it produced therefore decode with transparent pixels where the source
+had opaque black; later RGB/DIFF/LUMA/RUN chunks can inherit that alpha. Since
+0.1.5, both encoder and decoder use the all-zero cache required by the
+[QOI specification](https://qoiformat.org/qoi-specification.pdf). Header channel
+count does not change chunk semantics, so automatic legacy detection would also
+change valid transparent images. If you have files produced by the old encoder,
+recover their pixels with that same old library and re-encode with 0.1.5 or newer,
+or regenerate them from the original images. The public API is unchanged; QOI
+files produced by 0.1.5 remain compatible with 0.2.x.
+
 ## Supported TGA Features
 
 - Types 2/10: raw/RLE truecolor at 16/24/32 bits per pixel
@@ -295,6 +307,10 @@ In a Git checkout, also run `git diff --exit-code -- pkg.generated.mbti` after
 CI runs the wasm-gc, JavaScript and native targets on Linux. Compiler and core
 are pinned together to `0.10.14+7d59c7ec9`; the reference job uses Node.js 24,
 Python 3.12 and Pillow 12.3.0. Native tests require a supported local C toolchain.
+Every branch push and pull request runs CI, which can also be started manually.
+Each target checks types, builds in release mode and runs tests. Superseded runs
+on the same ref are cancelled, and jobs have a 20-minute timeout. Reference
+reports and any failed image inputs are retained as workflow artifacts.
 
 Tests cover exact decoded pixels, row padding, origins, palette/transparency
 handling, PNG filters/Adam7/DEFLATE, GIF composition, JPEG sampling/restarts and

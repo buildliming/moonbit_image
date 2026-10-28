@@ -2,9 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [default, main, master]
+    branches: ['**']
   pull_request:
-    branches: [default, main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -17,6 +21,7 @@ jobs:
   check:
     name: MoonBit (${{ matrix.target }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +45,9 @@ jobs:
       - name: Strict type check
         run: moon check --deny-warn --target ${{ matrix.target }}
 
+      - name: Release build
+        run: moon build --deny-warn --release --target ${{ matrix.target }}
+
       - name: Formatting
         if: matrix.target == 'wasm-gc'
         run: moon fmt --check
@@ -56,6 +64,7 @@ jobs:
   reference:
     name: Independent Pillow comparison
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -87,5 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: decoder-reference-results
-          path: _build/decoder-reference-results.json
+          path: |
+            _build/decoder-reference-results.json
+            _build/decoder-reference-failures/
           if-no-files-found: ignore

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Run CI on every branch and pull request, with manual dispatch, cancellation of
+  superseded runs and job timeouts. Build release artifacts for all three targets
+  and retain failing reference inputs with comparison reports.
+- Extend a QOI regression to capture the pre-0.1.5 index cache difference, and
+  document migration of files produced by the old encoder. Keep
+  standard decoding and the public API unchanged.
+
 ## 0.2.1 — 2026-10-28
 
 - Restore all embedded tests, image fixtures, independent pixel expectations and

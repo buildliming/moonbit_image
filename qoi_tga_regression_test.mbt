@@ -18,6 +18,12 @@ fn stability_pixels(
 
 ///|
 test "stability_qoi_encoder_cache_roundtrip" {
+  // Before 433b856, the encoder used an opaque initial cache and emitted
+  // this stream for opaque red/black. Under QOI's zero-initialized cache,
+  // INDEX 53 means transparent black, even with a three-channel header.
+  // Preserve standard decoding; legacy files require explicit migration.
+  let legacy = b"qoif\x00\x00\x00\x02\x00\x00\x00\x01\x03\x00\xFE\xFF\x00\x00\x35\x00\x00\x00\x00\x00\x00\x00\x01"
+  assert_eq(@image.decode_qoi(legacy).data, b"\xFF\x00\x00\xFF\x00\x00\x00\x00")
   let pixels = b"\xFF\x00\x00\xFF\x00\x00\x00\xFF"
   let image = @image.decode_qoi(
     b"qoif\x00\x00\x00\x02\x00\x00\x00\x01\x04\x00\xFE\xFF\x00\x00\xFE\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
