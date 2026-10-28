@@ -1,4 +1,6 @@
 // Copyright (c) 2025 lws
+// Output buffers are local: ownership transfers to Bytes after the last write,
+// without retaining mutable aliases or copying the complete pixel array.
 // QOI (Quite OK Image Format) decoder
 //
 // QOI is a fast, lossless image compression format.
@@ -77,7 +79,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
   if (pixel_count + 61) / 62 > data_end - self.pos {
     raise Failure::Failure("QOI: insufficient chunk data")
   }
-  let _pixels = Array::make(out_size, Byte::default())
+  let _pixels = FixedArray::make(out_size, Byte::default())
   let mut pixel_idx = 0
 
   // Color state
@@ -198,7 +200,7 @@ fn QoiDecoder::decode(self : QoiDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGBA8,
-    Bytes::from_array(_pixels),
+    _pixels.unsafe_reinterpret_as_bytes(),
   )
 }
 

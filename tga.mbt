@@ -1,4 +1,6 @@
 // Copyright (c) 2025 lws
+// Output buffers are local: ownership transfers to Bytes after the last write,
+// without retaining mutable aliases or copying the complete pixel array.
 // TGA (Truevision Targa) image decoder
 //
 // TGA is a simple raster graphics file format widely used in games and VFX.
@@ -199,7 +201,7 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Image raise Failure {
   if self.height * src_stride > self.data.length() - self.data_offset {
     raise Failure::Failure("TGA: unexpected end of pixel data")
   }
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   for dst_y = 0; dst_y < self.height; dst_y = dst_y + 1 {
     let src_y = self.src_row(dst_y)
@@ -226,7 +228,7 @@ fn TgaDecoder::decode_uncompressed(self : TgaDecoder) -> Image raise Failure {
     self.width,
     self.height,
     self.out_format(),
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -243,7 +245,7 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
     (self.data.length() - self.data_offset) / (src_bpp + 1) {
     raise Failure::Failure("TGA: insufficient RLE data")
   }
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   let mut pixels_done = 0
   let mut pos = self.data_offset
@@ -268,7 +270,6 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
       if src_bpp > self.data.length() - pos {
         raise Failure::Failure("TGA: truncated RLE pixel data")
       }
-      let pixel_data = self.data[pos:pos + src_bpp].to_owned()
       for _i = 0; _i < count; _i = _i + 1 {
         // Map file row to output row (file may be bottom-to-top)
         let dst_y = self.src_row(cur_y)
@@ -277,8 +278,8 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
         write_tga_pixel(
           _buf,
           dst_pixel_offset,
-          pixel_data,
-          0,
+          self.data,
+          pos,
           self.pixel_depth,
           self.grayscale,
           (self.image_descriptor & 15) != 0,
@@ -326,7 +327,7 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
     self.width,
     self.height,
     self.out_format(),
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -335,7 +336,7 @@ fn TgaDecoder::decode_rle(self : TgaDecoder) -> Image raise Failure {
 /// Callers (decode_rle / decode_uncompressed) validate bounds at packet/row level,
 /// so per-pixel bounds check is redundant and omitted here
 fn write_tga_pixel(
-  _buf : Array[Byte],
+  _buf : FixedArray[Byte],
   dst_offset : Int,
   src : Bytes,
   src_offset : Int,

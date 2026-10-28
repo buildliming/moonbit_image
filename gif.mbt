@@ -303,6 +303,7 @@ fn read_sub_blocks(
   data : Bytes,
   start_pos : Int,
   keep? : Bool = true,
+  prefix_bytes? : Int? = None,
 ) -> (Bytes, Int) raise Failure {
   let buf = Buffer()
   let mut pos = start_pos
@@ -316,10 +317,16 @@ fn read_sub_blocks(
       raise Failure::Failure("GIF: truncated sub-block")
     }
     if keep {
-      if count > MAX_DECODE_BYTES - buf.length() {
+      // Loop extensions only consume their first three bytes. Still walk and
+      // validate the complete chain, without retaining an arbitrary tail.
+      let retained = match prefix_bytes {
+        Some(limit) => Int::min(count, Int::max(0, limit - buf.length()))
+        None => count
+      }
+      if retained > MAX_DECODE_BYTES - buf.length() {
         raise Failure::Failure("GIF: compressed data exceeds size limit")
       }
-      buf.write_bytes(data[pos:pos + count].to_owned())
+      buf.write_bytes(data[pos:pos + retained])
     }
     pos = pos + count
   }
@@ -402,7 +409,7 @@ fn GifDecoder::decode_all(
   let mut delay = 0
   let mut disposal = 0
   let canvas_size = checked_image_size(self.width, self.height, 4)
-  let mut canvas : Array[Byte] = []
+  let mut canvas : FixedArray[Byte] = []
   let background = if self.global_ct.length() > 0 {
     let (r, g, b) = self.global_ct[self.bg_color]
     [r.to_byte(), g.to_byte(), b.to_byte(), b'\xFF']
@@ -450,7 +457,12 @@ fn GifDecoder::decode_all(
         pos = pos + 12
         let is_loop = application == b"NETSCAPE2.0" ||
           application == b"ANIMEXTS1.0"
-        let (payload, next_pos) = read_sub_blocks(self.data, pos, keep=is_loop)
+        let (payload, next_pos) = read_sub_blocks(
+          self.data,
+          pos,
+          keep=is_loop,
+          prefix_bytes=Some(3),
+        )
         pos = next_pos
         if is_loop && payload.length() >= 3 && payload[0] == b'\x01' {
           loop_count = read_u16_le(payload, 1)
@@ -527,7 +539,7 @@ fn GifDecoder::decode_all(
       background
     }
     if frames.length() == 0 {
-      canvas = Array::make(canvas_size, b'\x00')
+      canvas = FixedArray::make(canvas_size, b'\x00')
       for i = 0; i < canvas_size; i = i + 1 {
         canvas[i] = clear[i % 4]
       }
@@ -566,18 +578,15 @@ fn GifDecoder::decode_all(
         }
       }
     }
-    // Store each completed canvas once instead of concatenating then recopying
-    // every frame at the end of the animation.
-    let snapshot = Array::make(canvas_size, b'\x00')
-    for i = 0; i < canvas_size; i = i + 1 {
-      snapshot[i] = canvas[i]
-    }
+    // Animated frames own snapshots, since disposal mutates the canvas. The
+    // single-frame path transfers the canvas itself and immediately returns.
+    let snapshot = if first_only { canvas } else { canvas.copy() }
     frames.push(
       Image::new(
         self.width,
         self.height,
         PixelFormat::RGBA8,
-        Bytes::from_array(snapshot),
+        snapshot.unsafe_reinterpret_as_bytes(),
       ),
     )
     delays.push(delay)

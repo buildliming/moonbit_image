@@ -1,4 +1,6 @@
 // Copyright (c) 2025 lws
+// Output buffers are local: ownership transfers to Bytes after the last write,
+// without retaining mutable aliases or copying the complete pixel array.
 // BMP (Bitmap) image decoder
 //
 // Supported BMP formats:
@@ -215,7 +217,7 @@ fn bmp_row_stride(width : Int, bpp : Int) -> Int raise Failure {
 ///|
 /// Write a palette color to the output buffer at a pixel position
 fn write_palette_pixel(
-  _buf : Array[Byte],
+  _buf : FixedArray[Byte],
   dst : Int,
   idx : Int,
   num_colors : Int,
@@ -241,7 +243,7 @@ fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Image raise Failure {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
   let out_size = checked_image_size(self.width, self.height, 4)
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
     let src_row = if self.top_down { row } else { self.height - 1 - row }
@@ -260,7 +262,7 @@ fn BmpDecoder::decode_rgba(self : BmpDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGBA8,
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -273,7 +275,7 @@ fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Image raise Failure {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
   let out_size = checked_image_size(self.width, self.height, 3)
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
     let src_row = if self.top_down { row } else { self.height - 1 - row }
@@ -291,7 +293,7 @@ fn BmpDecoder::decode_24bit(self : BmpDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGB8,
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -306,7 +308,7 @@ fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Image raise Failure {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
   let out_size = checked_image_size(self.width, self.height, 4)
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
     let src_row = if self.top_down { row } else { self.height - 1 - row }
@@ -322,7 +324,7 @@ fn BmpDecoder::decode_8bit(self : BmpDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGBA8,
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -337,7 +339,7 @@ fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Image raise Failure {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
   let out_size = checked_image_size(self.width, self.height, 4)
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
     let src_row = if self.top_down { row } else { self.height - 1 - row }
@@ -359,7 +361,7 @@ fn BmpDecoder::decode_4bit(self : BmpDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGBA8,
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -374,7 +376,7 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Image raise Failure {
     raise Failure::Failure("BMP: unexpected end of pixel data")
   }
   let out_size = checked_image_size(self.width, self.height, 4)
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   for row = 0; row < self.height; row = row + 1 {
     let src_row = if self.top_down { row } else { self.height - 1 - row }
@@ -392,7 +394,7 @@ fn BmpDecoder::decode_1bit(self : BmpDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGBA8,
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -406,7 +408,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
   let palette = self.read_palette()
   let palette_rgba = palette_to_rgba_bytes(palette)
   let out_size = checked_image_size(self.width, self.height, 4)
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   let row_step = if self.top_down { 1 } else { -1 }
   let start_row = if self.top_down { 0 } else { self.height - 1 }
@@ -509,7 +511,7 @@ fn BmpDecoder::decode_rle8(self : BmpDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGBA8,
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }
 
@@ -523,7 +525,7 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
   let palette = self.read_palette()
   let palette_rgba = palette_to_rgba_bytes(palette)
   let out_size = checked_image_size(self.width, self.height, 4)
-  let _buf = Array::make(out_size, Byte::default())
+  let _buf = FixedArray::make(out_size, Byte::default())
 
   let row_step = if self.top_down { 1 } else { -1 }
   let start_row = if self.top_down { 0 } else { self.height - 1 }
@@ -642,6 +644,6 @@ fn BmpDecoder::decode_rle4(self : BmpDecoder) -> Image raise Failure {
     self.width,
     self.height,
     PixelFormat::RGBA8,
-    Bytes::from_array(_buf),
+    _buf.unsafe_reinterpret_as_bytes(),
   )
 }

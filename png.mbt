@@ -285,8 +285,13 @@ fn deflate_decompress_stream(
   data : Bytes,
   max_output : Int,
   window_size : Int,
+  start_pos? : Int = 0,
 ) -> (Bytes, Int) raise Failure {
-  let mut r = BitReader::new(data)
+  let mut r = if start_pos == 0 {
+    BitReader::new(data)
+  } else {
+    { data, byte_pos: start_pos, bit_pos: 0, }
+  }
   let out = Buffer()
   let mut fb = false
 
@@ -675,12 +680,12 @@ fn zlib_decompress(
 
   // Locate the trailer from the final block rather than the input's end.
   // PNG permits unused bytes after the zlib stream in the final IDAT chunk.
-  let (result, consumed) = deflate_decompress_stream(
-    data[2:].to_owned(),
+  let (result, trailer) = deflate_decompress_stream(
+    data,
     max_output,
     1 << (cinfo + 8),
+    start_pos=2,
   )
-  let trailer = 2 + consumed
   if trailer > data.length() - 4 {
     raise Failure::Failure("zlib: truncated Adler32 checksum")
   }
@@ -746,24 +751,20 @@ fn paeth(a : Int, b : Int, c : Int) -> Int {
 
 ///|
 /// Apply PNG filter reversal to a single row of pixel data
-/// `ft` = filter type, `rd` = filtered row data, `prev` = previous unfiltered row
-/// `row` = current row index, `bpp` = bytes per pixel, `arr` = output buffer
+/// Both row buffers are reused; the first previous row is initialized to zero.
 fn apply_filter(
   ft : Int,
-  rd : Bytes,
-  prev : Array[Byte],
-  row : Int,
+  rd : BytesView,
+  prev : FixedArray[Byte],
   bpp : Int,
-  arr : Array[Byte],
-  pitch : Int,
+  arr : FixedArray[Byte],
 ) -> Unit raise Failure {
-  let ro = row * pitch
   let sl = rd.length()
 
   // Filter None: data is already unfiltered
   if ft == F_NONE {
     for i = 0; i < sl; i = i + 1 {
-      arr[ro + i] = rd[i]
+      arr[i] = rd[i]
     }
     return ()
   }
@@ -772,10 +773,10 @@ fn apply_filter(
   if ft == F_SUB {
     let cf = if bpp < sl { bpp } else { sl }
     for i = 0; i < cf; i = i + 1 {
-      arr[ro + i] = rd[i]
+      arr[i] = rd[i]
     }
     for i = bpp; i < sl; i = i + 1 {
-      arr[ro + i] = ((rd[i].to_int() + arr[ro + i - bpp].to_int()) & 0xFF).to_byte()
+      arr[i] = ((rd[i].to_int() + arr[i - bpp].to_int()) & 0xFF).to_byte()
     }
     return ()
   }
@@ -784,8 +785,7 @@ fn apply_filter(
   if ft == F_UP {
     for i = 0; i < sl; i = i + 1 {
       let raw = rd[i].to_int()
-      let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
-      arr[ro + i] = ((raw + upv) & 0xFF).to_byte()
+      arr[i] = ((raw + prev[i].to_int()) & 0xFF).to_byte()
     }
     return ()
   }
@@ -794,9 +794,9 @@ fn apply_filter(
   if ft == F_AVG {
     for i = 0; i < sl; i = i + 1 {
       let raw = rd[i].to_int()
-      let left = if i >= bpp { arr[ro + i - bpp].to_int() } else { 0 }
-      let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
-      arr[ro + i] = ((raw + (left + upv) / 2) & 0xFF).to_byte()
+      let left = if i >= bpp { arr[i - bpp].to_int() } else { 0 }
+      let upv = prev[i].to_int()
+      arr[i] = ((raw + (left + upv) / 2) & 0xFF).to_byte()
     }
     return ()
   }
@@ -805,14 +805,10 @@ fn apply_filter(
   if ft == F_PAETH {
     for i = 0; i < sl; i = i + 1 {
       let raw = rd[i].to_int()
-      let left = if i >= bpp { arr[ro + i - bpp].to_int() } else { 0 }
-      let upv = if row > 0 && i < prev.length() { prev[i].to_int() } else { 0 }
-      let ul = if row > 0 && i >= bpp && i < prev.length() {
-        prev[i - bpp].to_int()
-      } else {
-        0
-      }
-      arr[ro + i] = ((raw + paeth(left, upv, ul)) & 0xFF).to_byte()
+      let left = if i >= bpp { arr[i - bpp].to_int() } else { 0 }
+      let upv = prev[i].to_int()
+      let ul = if i >= bpp { prev[i - bpp].to_int() } else { 0 }
+      arr[i] = ((raw + paeth(left, upv, ul)) & 0xFF).to_byte()
     }
     return ()
   }
@@ -848,7 +844,7 @@ const PC_RGBA : Int = 6
 
 ///|
 /// Check if a chunk type matches a 4-character code
-fn chunk_is(b : Bytes, c0 : Byte, c1 : Byte, c2 : Byte, c3 : Byte) -> Bool {
+fn chunk_is(b : BytesView, c0 : Byte, c1 : Byte, c2 : Byte, c3 : Byte) -> Bool {
   b.length() >= 4 && b[0] == c0 && b[1] == c1 && b[2] == c2 && b[3] == c3
 }
 
@@ -955,7 +951,7 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
     pos = pos + 4
 
     // Read chunk type (4 bytes)
-    let cbt = data[pos:pos + 4].to_owned()
+    let cbt = data[pos:pos + 4]
     pos = pos + 4
 
     if cl < 0 || cl > data.length() - pos - 4 {
@@ -969,7 +965,8 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
     }
 
     // Read chunk data
-    let cdat = data[pos:pos + cl].to_owned()
+    let cdata_start = pos
+    let cdat = data[pos:pos + cl]
     pos = pos + cl
 
     // Read stored CRC
@@ -1005,8 +1002,8 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
       if hi {
         raise Failure::Failure("PNG: dup IHDR")
       }
-      w = read_u32_be(cdat, 0)
-      h = read_u32_be(cdat, 4)
+      w = read_u32_be(data, cdata_start)
+      h = read_u32_be(data, cdata_start + 4)
       bd = cdat[8].to_int()
       ct = cdat[9].to_int()
       il = cdat[12].to_int()
@@ -1032,6 +1029,18 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
       if il != 0 && il != 1 {
         raise Failure::Failure("PNG: bad interlace")
       }
+      // Reject oversized images before retaining compressed chunks. tRNS may
+      // add an output channel later, which is checked again before inflation.
+      let _ = checked_image_size(
+        w,
+        h,
+        if ct == PC_IDX {
+          4
+        } else {
+          png_spp(ct)
+        },
+      )
+      let _ = png_filtered_size(w, h, bd, ct, il)
       hi = true
     } else if id {
       // IDAT: image data
@@ -1040,6 +1049,9 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
       }
       if ct == PC_IDX && !has_palette {
         raise Failure::Failure("PNG: missing PLTE")
+      }
+      if cl > MAX_DECODE_BYTES - cd.length() {
+        raise Failure::Failure("PNG: compressed data exceeds 256 MiB limit")
       }
       has_idat = true
       cd.write_bytes(cdat)
@@ -1091,7 +1103,7 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
         _ => raise Failure::Failure("PNG: tRNS with alpha channel")
       }
       has_trns = true
-      trns = cdat
+      trns = cdat.to_owned()
     } else if is_critical {
       raise Failure::Failure("PNG: unknown critical chunk")
     }
@@ -1115,12 +1127,7 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
     raise Failure::Failure("PNG: incorrect scanline data length")
   }
 
-  // Decode (interlaced or non-interlaced)
-  if il == 1 {
-    decode_a7(w, h, bd, ct, pal, trns, dec)
-  } else {
-    decode_plain(w, h, bd, ct, pal, trns, dec)
-  }
+  decode_png_pixels(w, h, bd, ct, il, pal, trns, dec)
 }
 
 ///|
@@ -1160,42 +1167,9 @@ fn png_filtered_size(
 }
 
 ///|
-/// Reverse filters on packed scanlines; each row starts on a byte boundary.
-fn png_unfilter(
-  w : Int,
-  h : Int,
-  bd : Int,
-  ct : Int,
-  dec : Bytes,
-) -> Bytes raise Failure {
-  let pitch = png_pitch(w, bd, ct)
-  let bpp = (png_spp(ct) * bd + 7) / 8
-  let ssl = pitch + 1
-  let arr = Array::make(pitch * h, b'\x00')
-  let prev = Array::make(pitch, b'\x00')
-  for y = 0; y < h; y = y + 1 {
-    let rs = y * ssl
-    apply_filter(
-      dec[rs].to_int(),
-      dec[rs + 1:rs + ssl].to_owned(),
-      prev,
-      y,
-      bpp,
-      arr,
-      pitch,
-    )
-    for x = 0; x < pitch; x = x + 1 {
-      prev[x] = arr[y * pitch + x]
-    }
-  }
-  Bytes::from_array(arr)
-}
-
-///|
 /// Read a sample at its original precision, before transparency comparison.
 fn png_sample(
-  data : Bytes,
-  row : Int,
+  data : FixedArray[Byte],
   x : Int,
   channel : Int,
   bd : Int,
@@ -1203,10 +1177,10 @@ fn png_sample(
 ) -> Int {
   if bd < 8 {
     let per_byte = 8 / bd
-    (data[row + x / per_byte].to_int() >> (8 - bd - x % per_byte * bd)) &
+    (data[x / per_byte].to_int() >> (8 - bd - x % per_byte * bd)) &
     ((1 << bd) - 1)
   } else {
-    let offset = row + (x * sp + channel) * (bd / 8)
+    let offset = (x * sp + channel) * (bd / 8)
     if bd == 16 {
       (data[offset].to_int() << 8) | data[offset + 1].to_int()
     } else {
@@ -1216,19 +1190,19 @@ fn png_sample(
 }
 
 ///|
-/// Expand packed samples/palette entries and normalize samples to 8-bit output.
-fn png_expand(
-  data : Bytes,
+/// Unfilter and expand each row directly into its final output position.
+/// Plain and Adam7 images use the same two reusable row buffers per pass;
+/// no full-image/pass unfiltered buffer or per-row input copy is required.
+fn decode_png_pixels(
   w : Int,
   h : Int,
   bd : Int,
   ct : Int,
+  il : Int,
   pal : Array[Color],
   trns : Bytes,
-) -> Bytes raise Failure {
-  if bd == 8 && ct != PC_IDX && trns.length() == 0 {
-    return data
-  }
+  dec : Bytes,
+) -> Image raise Failure {
   let sp = png_spp(ct)
   let transparent = trns.length() > 0 && ct != PC_IDX
   let bpp = if ct == PC_IDX {
@@ -1236,8 +1210,7 @@ fn png_expand(
   } else {
     sp + (if transparent { 1 } else { 0 })
   }
-  let pitch = png_pitch(w, bd, ct)
-  let arr = Array::make(w * h * bpp, b'\x00')
+  let arr = FixedArray::make(w * h * bpp, b'\x00')
   let mask = (1 << bd) - 1
   let transparent_samples = Array::make(sp, 0)
   if transparent {
@@ -1248,110 +1221,81 @@ fn png_expand(
         mask
     }
   }
-  for y = 0; y < h; y = y + 1 {
-    for x = 0; x < w; x = x + 1 {
-      let dst = (y * w + x) * bpp
-      if ct == PC_IDX {
-        let index = png_sample(data, y * pitch, x, 0, bd, sp)
-        if index >= pal.length() {
-          raise Failure::Failure("PNG: palette index out of range")
-        }
-        let color = pal[index]
-        arr[dst] = color.r.to_byte()
-        arr[dst + 1] = color.g.to_byte()
-        arr[dst + 2] = color.b.to_byte()
-        arr[dst + 3] = color.a.to_byte()
-      } else {
-        let mut matches = transparent
-        for c = 0; c < sp; c = c + 1 {
-          let sample = png_sample(data, y * pitch, x, c, bd, sp)
-          if transparent && sample != transparent_samples[c] {
-            matches = false
-          }
-          let value = if bd == 16 {
-            sample >> 8
-          } else if bd < 8 {
-            sample * 255 / mask
-          } else {
-            sample
-          }
-          arr[dst + c] = value.to_byte()
-        }
-        if transparent {
-          arr[dst + sp] = if matches { b'\x00' } else { b'\xFF' }
-        }
-      }
-    }
-  }
-  Bytes::from_array(arr)
-}
-
-///|
-/// Decode a non-interlaced PNG image from decompressed filtered data
-fn decode_plain(
-  w : Int,
-  h : Int,
-  bd : Int,
-  ct : Int,
-  pal : Array[Color],
-  trns : Bytes,
-  dec : Bytes,
-) -> Image raise Failure {
-  let raw = png_unfilter(w, h, bd, ct, dec)
-  let pixels = png_expand(raw, w, h, bd, ct, pal, trns)
-  Image::new(w, h, out_fmt(ct, trns.length() > 0), pixels)
-}
-
-///|
-/// Decode an Adam7 interlaced PNG image
-fn decode_a7(
-  w : Int,
-  h : Int,
-  bd : Int,
-  ct : Int,
-  pal : Array[Color],
-  trns : Bytes,
-  dec : Bytes,
-) -> Image raise Failure {
-  let bpp = if ct == PC_IDX {
-    4
-  } else {
-    png_spp(ct) + (if trns.length() > 0 { 1 } else { 0 })
-  }
-  let oarr = Array::make(w * h * bpp, b'\x00')
-  let mut sp_off = 0
-
-  for pass = 0; pass < 7; pass = pass + 1 {
-    let (pw, ph) = a7dims(w, h, pass)
+  let filter_bpp = (sp * bd + 7) / 8
+  let mut offset = 0
+  let passes = if il == 1 { 7 } else { 1 }
+  for pass = 0; pass < passes; pass = pass + 1 {
+    let (pw, ph) = if il == 1 { a7dims(w, h, pass) } else { (w, h) }
     if pw == 0 || ph == 0 {
       continue
     }
-
-    let (xs, ys, xst, yst) = a7_params[pass]
-    let pass_size = (png_pitch(pw, bd, ct) + 1) * ph
-    let raw = png_unfilter(
-      pw,
-      ph,
-      bd,
-      ct,
-      dec[sp_off:sp_off + pass_size].to_owned(),
-    )
-    sp_off = sp_off + pass_size
-    let pixels = png_expand(raw, pw, ph, bd, ct, pal, trns)
-
-    // Scatter pass pixels to output image
-    for py = 0; py < ph; py = py + 1 {
-      let oy = ys + py * yst
-      for px = 0; px < pw; px = px + 1 {
-        let ox = xs + px * xst
-        for b = 0; b < bpp; b = b + 1 {
-          let si = (py * pw + px) * bpp + b
-          let di = oy * (w * bpp) + ox * bpp + b
-          oarr[di] = pixels[si]
+    let (xs, ys, xst, yst) = if il == 1 {
+      a7_params[pass]
+    } else {
+      (0, 0, 1, 1)
+    }
+    let pitch = png_pitch(pw, bd, ct)
+    let mut previous = FixedArray::make(pitch, b'\x00')
+    let mut row = FixedArray::make(pitch, b'\x00')
+    for y = 0; y < ph; y = y + 1 {
+      apply_filter(
+        dec[offset].to_int(),
+        dec[offset + 1:offset + 1 + pitch],
+        previous,
+        filter_bpp,
+        row,
+      )
+      offset = offset + 1 + pitch
+      // Common 8-bit rows (including the final Adam7 pass) already have the
+      // required sample layout, so copy them in bulk without per-channel work.
+      if bd == 8 && ct != PC_IDX && !transparent && xst == 1 {
+        row.blit_to(arr, len=pitch, dst_offset=((ys + y * yst) * w + xs) * bpp)
+      } else {
+        for x = 0; x < pw; x = x + 1 {
+          let dst = ((ys + y * yst) * w + xs + x * xst) * bpp
+          if ct == PC_IDX {
+            let index = png_sample(row, x, 0, bd, sp)
+            if index >= pal.length() {
+              raise Failure::Failure("PNG: palette index out of range")
+            }
+            let color = pal[index]
+            arr[dst] = color.r.to_byte()
+            arr[dst + 1] = color.g.to_byte()
+            arr[dst + 2] = color.b.to_byte()
+            arr[dst + 3] = color.a.to_byte()
+          } else {
+            let mut matches = transparent
+            for c = 0; c < sp; c = c + 1 {
+              let sample = png_sample(row, x, c, bd, sp)
+              if transparent && sample != transparent_samples[c] {
+                matches = false
+              }
+              let value = if bd == 16 {
+                sample >> 8
+              } else if bd < 8 {
+                sample * 255 / mask
+              } else {
+                sample
+              }
+              arr[dst + c] = value.to_byte()
+            }
+            if transparent {
+              arr[dst + sp] = if matches { b'\x00' } else { b'\xFF' }
+            }
+          }
         }
       }
+      let old_previous = previous
+      previous = row
+      row = old_previous
     }
   }
-
-  Image::new(w, h, out_fmt(ct, trns.length() > 0), Bytes::from_array(oarr))
+  // Ownership is transferred only after the final write; no mutable alias
+  // escapes or is retained by the decoder.
+  Image::new(
+    w,
+    h,
+    out_fmt(ct, trns.length() > 0),
+    arr.unsafe_reinterpret_as_bytes(),
+  )
 }

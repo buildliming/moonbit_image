@@ -13,7 +13,7 @@ and malformed data raise `Failure`.
 | **TGA** | Types 2/3/10/11, truecolor 16/24/32-bit and grayscale 8/16-bit, four image origins |
 | **PNG** | Standard color/depth combinations, tRNS, Adam7, stored/fixed/dynamic DEFLATE |
 | **GIF** | GIF87a/89a, LZW, interlace, transparency and composited animation frames |
-| **JPEG** | 8-bit SOF0 baseline, grayscale and conventional YCbCr 4:4:4/4:2:2/4:2:0 |
+| **JPEG** | 8-bit SOF0 baseline and SOF2 progressive, grayscale and conventional YCbCr 4:4:4/4:2:2/4:2:0 |
 
 ## Installation
 
@@ -113,7 +113,7 @@ shunge/image
 ├── tga.mbt                    # TGA decoder
 ├── png.mbt                    # PNG decoder + DEFLATE decompressor
 ├── gif.mbt                    # GIF decoder + LZW decompressor
-├── jpeg.mbt                   # JPEG baseline decoder (DCT/IDCT/Huffman)
+├── jpeg.mbt                   # JPEG baseline/progressive decoder (DCT/IDCT/Huffman)
 │
 ├── bmp_writer.mbt             # BMP encoder
 ├── qoi_writer.mbt             # QOI encoder
@@ -125,6 +125,7 @@ shunge/image
 ├── fuzz_test.mbt              # Fuzz testing (random bytes → decoders, must not crash)
 ├── roundtrip_test.mbt         # Round-trip encode/decode tests
 ├── jpeg_real_test.mbt         # Embedded JPEG photographs with Pillow reference pixels
+├── jpeg_progressive_test.mbt  # Spectral selection, refinement, restart and malformed scans
 ├── real_photo_test.mbt        # Embedded photographs in BMP/PNG/TGA/QOI/GIF
 ├── *_regression_test.mbt      # Format-specific independent pixel and malformed-input cases
 ├── decoder_stability_test.mbt # Structured malformed-input stability checks
@@ -213,9 +214,10 @@ methods raise `Failure`.
 
 ## Supported JPEG Features
 
-- Baseline JPEG (SOF0) with 8-bit precision
-- Grayscale (Gray8) and YCbCr color (RGB8) images in a single scan
-- Huffman-coded DC and AC coefficients with O(1) prefix table lookup
+- Baseline JPEG (SOF0) and progressive JPEG (SOF2) with 8-bit samples and quantization tables
+- Grayscale (Gray8) and conventional YCbCr color (RGB8); baseline uses a single scan
+- Progressive DC/AC spectral selection, initial scans and successive approximation
+- Huffman-coded coefficients using compact canonical tables (at most 304 integers per table)
 - Zigzag deordering, dequantization, and IDCT
 - Sub-sampling: 4:4:4, 4:2:2, 4:2:0
 - Restart marker (RST) support
@@ -225,21 +227,33 @@ methods raise `Failure`.
 - Output formats: Gray8 / RGB8
 
 Three-component input uses conventional component IDs 1/2/3 for Y/Cb/Cr.
-Progressive, extended sequential, lossless, arithmetic-coded, CMYK/YCCK,
-Adobe RGB-transform and separate component scans are not supported. JPEG pixels
-can differ slightly from libjpeg/Pillow because of IDCT and color rounding.
+Extended sequential, lossless, arithmetic-coded, CMYK/YCCK, Adobe RGB-transform,
+16-bit quantization tables and separate baseline component scans are not supported.
+Progressive input is decoded to its final image; incremental preview delivery is
+not implemented. DC-only images at EOI are accepted with omitted AC coefficients
+set to zero, without libjpeg's optional preview smoothing. JPEG pixels can differ
+slightly from libjpeg/Pillow because of IDCT and color rounding.
 
 ## Resource Limits
 
 Decoder dimensions and buffer sizes are checked before allocation. Each checked
 decoded pixel buffer is limited to 256 MiB (268,435,456 bytes); PNG also limits
-the expected filtered scanline buffer and inflation output. GIF animation output
-additionally limits the sum of retained full-canvas frame bytes to 256 MiB.
+the expected filtered scanline buffer, inflation output and cumulative IDAT
+payload to 256 MiB each. GIF animation output additionally limits the sum of
+retained full-canvas frame bytes to 256 MiB. Progressive JPEG checks a combined
+256 MiB logical budget for coefficients, component planes and output buffers;
+entropy data has a separate 256 MiB limit per scan.
 
-These are per-buffer and GIF frame-storage limits, not a process-wide memory
-budget. Input bytes, temporary buffers, copies, JPEG component planes and later
-image transformations can consume additional memory. Exceeding a decoder limit
-raises `Failure`.
+BMP/QOI/TGA transfer their completed output buffer without a full-image copy;
+TGA RLE packets reference their source bytes directly. PNG reverses filters using
+two reusable rows per pass and writes directly to the final output, including
+Adam7. GIF transfers the first-frame canvas directly or copies it once per
+retained animation frame, preserving frame independence.
+
+These are logical buffer limits, not a process-wide memory budget. Input bytes,
+temporary compressed buffers, runtime array/object overhead and later image
+transformations consume additional memory. Exceeding a decoder limit raises
+`Failure`.
 
 ## Other Limitations
 
@@ -272,7 +286,8 @@ are pinned together to `0.10.14+7d59c7ec9`; the reference job uses Node.js 24,
 Python 3.12 and Pillow 12.3.0. Native tests require a supported local C toolchain.
 
 Tests cover exact decoded pixels, row padding, origins, palette/transparency
-handling, PNG filters/Adam7/DEFLATE, GIF composition, JPEG sampling/restarts,
+handling, PNG filters/Adam7/DEFLATE, GIF composition, JPEG sampling/restarts and
+progressive refinement,
 malformed structures, resource limits and deterministic input mutation. Existing
 round-trip and pattern tests complement independent reference cases.
 
@@ -287,6 +302,7 @@ For a reusable comparison against an independent decoder, install Pillow and run
 python -m pip install Pillow==12.3.0
 python -B -m unittest discover -s tools -p test_pillow_reference.py
 python tools/verify_decoders.py
+python tools/verify_decoders.py --suite basic
 python tools/verify_decoders.py --corpus /path/to/photos --max-side 128
 ```
 
@@ -295,10 +311,19 @@ RGBA bytes against Pillow. Embedded photographic JPEGs and optional corpus files
 are first compared directly, preserving original dimensions and encoding
 features. Unsupported, unreadable or corrupt originals are recorded as failures;
 the verifier continues with other files and writes its report before returning
-a failure status. It also generates
-cases from those photographs and deterministic patterns across the six formats,
-including JPEG 4:4:4, 4:2:2 and 4:2:0. `--max-side` bounds the derived cases;
-original-file comparisons keep their full dimensions.
+a failure status. The default complex suite derives Gaussian blur (two radii),
+box blur and horizontal motion blur from those photographs and deterministic
+patterns: smooth gradients, radial alpha, high-frequency patterns, odd dimensions
+and one-pixel-wide images. Its encoding matrix covers all six formats, including
+baseline/progressive JPEG 4:4:4, 4:2:2 and 4:2:0, TGA RLE and GIF interlacing.
+The default corpus has 1311 comparisons, including 300 progressive JPEG cases.
+`--suite basic` selects the smaller 131-case matrix. `--max-side` bounds derived
+cases; original-file comparisons keep their full dimensions.
+
+The verifier reuses one Node process and one input/output file pair, processes
+one source at a time, and removes its temporary build directory after the run.
+`--timeout` bounds each decoder request (30 seconds by default); a timeout or
+process crash is recorded and the worker restarts for subsequent cases.
 
 `tools/pillow_reference.py` supplements Pillow for PNG normalization and
 transparency cases that Pillow's RGBA conversion does not preserve: 16-bit
@@ -307,14 +332,16 @@ comparisons use original sample precision, masking unused key bits according to
 the PNG specification. These expectations come from an independent Python
 implementation of zlib inflation, PNG filters and Adam7 sample extraction,
 followed by specification-defined normalization; they never use MoonBit decoder
-output. The five Python oracle tests cover normalization, transparency precision,
-interlacing/filters, unused transparency bits and continued processing after bad
-original files.
+output. Python tests cover normalization, transparency precision, interlacing,
+blur and encoding variants, continued processing after bad original files and
+worker recovery after a failure, crash or timeout.
 
 Lossless results must match exactly; JPEG allows at most three levels of error
-per channel. Sources, generated cases and the JSON report
-`_build/decoder-reference-results.json` remain local; no network is required.
-The report records the Pillow version, case dimensions and pixel errors. These
+per channel. The JSON report `_build/decoder-reference-results.json` remains
+local; no network is required. Failed encoded inputs are retained by SHA256 in
+`_build/decoder-reference-failures/`; successful temporary inputs are removed.
+The report records Pillow version, dimensions, encoding and blur parameters,
+input hashes, pixel errors and elapsed decoder time. These
 cases complement the format-specific fixtures rather than establishing support
 for every variant of a format.
 
@@ -328,6 +355,7 @@ python tools/generate_png_deflate_fixtures.py
 python tools/generate_bmp_regression_fixtures.py
 python tools/generate_gif_regression_fixtures.py
 python tools/generate_jpeg_regression_fixtures.py
+python tools/generate_jpeg_progressive_fixtures.py
 python tools/generate_qoi_tga_fixtures.py
 python tools/generate_photo_references.py
 moon fmt
@@ -342,6 +370,8 @@ These exceptions are identified in their generators.
 PNG behavior follows the [W3C PNG specification](https://www.w3.org/TR/png-3/),
 [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) and
 [RFC 1951](https://www.rfc-editor.org/rfc/rfc1951).
+Progressive JPEG scan handling follows
+[ITU-T T.81 Annex G](https://www.w3.org/Graphics/JPEG/itu-t81.pdf).
 
 ## Contributing
 

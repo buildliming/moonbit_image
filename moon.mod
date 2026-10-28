@@ -1,12 +1,12 @@
 name = "shunge/image"
 
-version = "0.1.5"
+version = "0.2.0"
 
 readme = "README.md"
 
 repository = "https://github.com/buildliming/moonbit_image"
 
-description = "一个纯 MoonBit 实现的图像解码库，支持 BMP/QOI/TGA/PNG/GIF/JPEG 六种格式，内置完整 DEFLATE 解压器和 LZW/RLE 压缩支持，一行代码即可完成图像解码。"
+description = "纯 MoonBit 图像解码库，支持 BMP/QOI/TGA/PNG/GIF/JPEG 六种格式、渐进式 JPEG、Adam7 PNG 和 GIF 动画，内置 DEFLATE/LZW/RLE 解压及资源边界检查。"
 
 keywords = [
   "image",

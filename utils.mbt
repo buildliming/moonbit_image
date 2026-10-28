@@ -101,7 +101,7 @@ fn make_crc32_table() -> Array[Int] {
 ///|
 /// Compute CRC-32 over multiple Bytes segments efficiently without concatenation
 /// Pass previous crc32 result as `initial` to continue (use 0 for first segment)
-fn crc32_update(initial : Int, data : Bytes) -> Int {
+fn crc32_update(initial : Int, data : BytesView) -> Int {
   let mut c = initial ^ 0xFFFFFFFF
   for i = 0; i < data.length(); i = i + 1 {
     let byte_val = data[i].to_int()
@@ -113,7 +113,7 @@ fn crc32_update(initial : Int, data : Bytes) -> Int {
 
 ///|
 /// Convenience: compute CRC-32 of chunk_type + chunk_data without allocating
-fn crc32_chunk(chunk_type : Bytes, chunk_data : Bytes) -> Int {
+fn crc32_chunk(chunk_type : BytesView, chunk_data : BytesView) -> Int {
   let initial = crc32_update(0, chunk_type)
   crc32_update(initial, chunk_data)
 }

@@ -149,7 +149,6 @@ for marker, _, _, end in markers(restart):
     if marker == 0xDA:
         invalid["restart_empty_segment"] = restart[:end] + b"\xff\xd0" + restart[end:]
 for mode, name, options in [
-    ("RGB", "progressive_file", {"progressive": True}),
     ("CMYK", "cmyk_file", {}),
     ("RGB", "rgb_adobe_file", {"keep_rgb": True}),
 ]:
