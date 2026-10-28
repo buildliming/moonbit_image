@@ -269,10 +269,14 @@ MIT
 
 ## Testing
 
-The Mooncakes download contains the library and its API documentation. Clone the
-[source repository](https://github.com/buildliming/moonbit_image) to run the full
-test suite and independent reference tools; embedded fixtures and generators are
-kept in Git rather than included in every dependency download.
+Starting with 0.2.1, the Mooncakes download includes the full test suite, embedded
+image samples, independent expected pixels and Python reference/generation tools.
+Run the commands below from an extracted package or a checkout of the
+[source repository](https://github.com/buildliming/moonbit_image). No original
+photo downloads are needed. The largest fixtures use compact Base64 storage;
+MoonBit's standard library restores exactly the original bytes during tests,
+independently of the image decoder. Tests need no Python or runtime file access.
+Only generated images, build output and local caches are excluded from publishing.
 
 Run strict checks without warning suppression:
 
@@ -280,11 +284,13 @@ Run strict checks without warning suppression:
 moon check --deny-warn
 moon fmt --check
 moon info
-git diff --exit-code -- pkg.generated.mbti
 moon test --deny-warn --target wasm-gc
 moon test --deny-warn --target js
 moon test --deny-warn --target native
 ```
+
+In a Git checkout, also run `git diff --exit-code -- pkg.generated.mbti` after
+`moon info` to check for unintended public API changes.
 
 CI runs the wasm-gc, JavaScript and native targets on Linux. Compiler and core
 are pinned together to `0.10.14+7d59c7ec9`; the reference job uses Node.js 24,
@@ -363,6 +369,7 @@ python tools/generate_jpeg_regression_fixtures.py
 python tools/generate_jpeg_progressive_fixtures.py
 python tools/generate_qoi_tga_fixtures.py
 python tools/generate_photo_references.py
+python -B tools/fixture_data.py
 moon fmt
 moon test --deny-warn
 ```
@@ -371,6 +378,12 @@ Some fixtures assert specification behavior that differs from Pillow: odd RLE4
 absolute runs are checked through equivalent uncompressed reference images;
 32-bit BMP alpha and skipped RLE pixels retain this library's documented behavior.
 These exceptions are identified in their generators.
+
+`tools/fixture_data.py` also compacts legacy complex/medium fixture output without
+changing its bytes. Photographic generators write the compact form directly;
+the independent verifier reads both the legacy and compact forms. The supported
+reproduction commands above use the embedded samples and work from the package;
+historical root-level generation scripts are not required for reproduction.
 
 PNG behavior follows the [W3C PNG specification](https://www.w3.org/TR/png-3/),
 [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) and

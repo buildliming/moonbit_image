@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 — 2026-10-28
+
+- Restore all embedded tests, image fixtures, independent pixel expectations and
+  generation/reference scripts to the Mooncakes package for reproduction.
+- Store the largest fixtures in Base64 without changing their bytes or assertions,
+  keeping the full package below the previously rejected upload size. Decoding the
+  fixtures uses MoonBit's standard library and adds no library runtime dependency.
+- Make photo generation and reference comparison read both fixture representations;
+  document reproduction directly from the published package without original photos.
+
 ## 0.2.0 — 2026-10-28
 
 - Decode 8-bit progressive JPEG (SOF2), including spectral selection, DC/AC

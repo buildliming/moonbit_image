@@ -1,4 +1,4 @@
-# Package only the reusable library. Tests and generators remain in GitHub.
+# Ship sources, embedded tests and generators for offline reproduction.
 # .moonignore replaces .gitignore for packaging, so keep build exclusions here.
 /_build/
 /target/
@@ -11,11 +11,3 @@
 *.swo
 Thumbs.db
 .DS_Store
-
-*_test.mbt
-*_wbtest.mbt
-*.py
-/tools/
-/example/
-/ARTICLE.md
-/PROJECT_PROPOSAL.md

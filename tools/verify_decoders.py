@@ -16,7 +16,6 @@ import json
 import math
 from pathlib import Path
 import queue
-import re
 import shutil
 import subprocess
 import tempfile
@@ -25,6 +24,7 @@ import time
 
 from PIL import Image, ImageFilter, __version__ as pillow_version
 from pillow_reference import reference_rgba
+from fixture_data import fixture_functions
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -156,12 +156,10 @@ def build_harness(work: Path) -> Path:
 def original_images(corpus: Path | None):
     # These are bytes of real photographs, not expected decoder checksums.
     source = (ROOT / "jpeg_real_test.mbt").read_text(encoding="utf-8")
-    matches = re.findall(r"fn (make_\w+)\(\) -> Bytes \{\s*(?:make_bytes\(\[(.*?)\]\)|b\"(.*?)\")\s*\}", source, re.S)
+    matches = list(fixture_functions(source))
     if not matches:
         raise RuntimeError("No photographic fixtures found in jpeg_real_test.mbt")
-    for name, payload, literal in matches:
-        values = re.findall(r"0x([0-9A-Fa-f]{2})", payload) if payload else re.findall(r"\\x([0-9A-Fa-f]{2})", literal)
-        data = bytes(int(value, 16) for value in values)
+    for name, data in matches:
         yield name, data, None
     if corpus:
         for path in sorted(corpus.rglob("*")):

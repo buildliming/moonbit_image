@@ -1,6 +1,7 @@
 """Run with python -B -m unittest discover -s tools -p test_pillow_reference.py."""
 
 import struct
+import binascii
 from io import BytesIO
 from pathlib import Path
 import shutil
@@ -10,11 +11,28 @@ import unittest
 from PIL import Image
 from generate_png_regression_fixtures import png
 from pillow_reference import reference_rgba
+from fixture_data import compact_source, fixture_expression, fixture_functions
 from verify_decoders import (DecoderWorker, complex_patterns, encoded_variants,
                              source_images, visual_variants)
 
 
 class PillowReferenceTests(unittest.TestCase):
+    def test_fixture_storage_preserves_all_byte_values_and_legacy_formats(self):
+        data = bytes(range(256))
+        array = 'make_bytes([' + ','.join(f'0x{value:02X}' for value in data) + '])'
+        literal = 'b"' + ''.join(f'\\x{value:02X}' for value in data) + '"'
+        for expression in (array, literal, fixture_expression(data)):
+            source = f'fn make_sample() -> Bytes {{\n {expression}\n}}'
+            compact = compact_source(source)
+            self.assertEqual(list(fixture_functions(source)), [('make_sample', data)])
+            self.assertEqual(list(fixture_functions(compact)), [('make_sample', data)])
+            self.assertEqual(compact_source(compact), compact)
+
+    def test_corrupt_base64_fixture_is_rejected(self):
+        source = 'fn make_sample() -> Bytes { fixture_base64("AQ=") }'
+        with self.assertRaises(binascii.Error):
+            list(fixture_functions(source))
+
     def test_gray16_uses_high_byte(self):
         samples = [[(value,) for value in (0, 1, 255, 256, 32768, 65535)]]
         result = reference_rgba(png(samples, 16, 0, False))
