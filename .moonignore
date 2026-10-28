@@ -1,0 +1,21 @@
+# Package only the reusable library. Tests and generators remain in GitHub.
+# .moonignore replaces .gitignore for packaging, so keep build exclusions here.
+/_build/
+/target/
+/test_images/
+**/_build/
+**/__pycache__/
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
+
+*_test.mbt
+*_wbtest.mbt
+*.py
+/tools/
+/example/
+/ARTICLE.md
+/PROJECT_PROPOSAL.md

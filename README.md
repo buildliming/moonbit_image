@@ -269,6 +269,11 @@ MIT
 
 ## Testing
 
+The Mooncakes download contains the library and its API documentation. Clone the
+[source repository](https://github.com/buildliming/moonbit_image) to run the full
+test suite and independent reference tools; embedded fixtures and generators are
+kept in Git rather than included in every dependency download.
+
 Run strict checks without warning suppression:
 
 ```bash
