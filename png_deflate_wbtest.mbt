@@ -2,7 +2,7 @@
 // RFC bitstreams are independently checked with Python's zlib.
 
 ///|
-fn deflate_test_bytes(values : Array[Int]) -> Bytes {
+fn deflate_test_bytes(values : Array[Int32]) -> Bytes {
   Bytes::from_array(values.map(fn(value) { value.to_byte() }))
 }
 
@@ -28,7 +28,7 @@ fn expect_invalid_deflate(data : Bytes) -> Unit raise Failure {
 ///|
 fn expect_invalid_zlib(
   data : Bytes,
-  max_output? : Int = 0x7FFFFFFF,
+  max_output~ : Int32 = 0x7FFFFFFF,
 ) -> Unit raise Failure {
   let rejected = try {
     let _ = zlib_decompress(data, max_output~)

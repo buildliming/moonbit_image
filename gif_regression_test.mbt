@@ -2,15 +2,15 @@
 // Expected RGBA pixels and metadata are independently decoded by Pillow.
 
 ///|
-fn gif_regression_bytes(values : Array[Int]) -> Bytes {
+fn gif_regression_bytes(values : Array[Int32]) -> Bytes {
   Bytes::from_array(values.map(value => value.to_byte()))
 }
 
 ///|
 fn gif_regression_check(
   image : @image.Image,
-  width : Int,
-  height : Int,
+  width : Int32,
+  height : Int32,
   expected : Bytes,
 ) -> Unit raise Failure {
   if image.width != width ||
@@ -33,7 +33,7 @@ fn gif_regression_check(
 ///|
 fn gif_regression_reject(
   data : Bytes,
-  all_only? : Bool = false,
+  all_only~ : Bool = false,
 ) -> Unit raise Failure {
   if !all_only {
     let rejected = try {

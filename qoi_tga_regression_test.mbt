@@ -3,8 +3,8 @@
 ///|
 fn stability_pixels(
   data : Bytes,
-  w : Int,
-  h : Int,
+  w : Int32,
+  h : Int32,
   expected : Bytes,
 ) -> Unit raise {
   let image = @image.decode(data)

@@ -18,7 +18,7 @@ const LCG_INCREMENT = 1013904223
 
 ///|
 /// Advance the LCG state and return a pseudo-random byte value (0..255)
-fn next_random(state : Int) -> (Int, Int) {
+fn next_random(state : Int32) -> (Int32, Int32) {
   let new_state = (state * LCG_MULTIPLIER + LCG_INCREMENT) & 0x7FFFFFFF
   let value = (new_state >> 7) & 0xFF
   return (new_state, value)
@@ -26,7 +26,7 @@ fn next_random(state : Int) -> (Int, Int) {
 
 ///|
 /// Generate random Bytes of specified length using the LCG
-fn random_bytes(seed : Int, length : Int) -> Bytes {
+fn random_bytes(seed : Int32, length : Int32) -> Bytes {
   let buf = Array::make(length, b'\x00')
   let mut state = seed
   for i = 0; i < length; i = i + 1 {

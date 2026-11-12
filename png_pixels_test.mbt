@@ -2,15 +2,15 @@
 // PNG construction uses Python stdlib, and expected pixels come from unpacked samples.
 
 ///|
-fn png_pixels_bytes(values : Array[Int]) -> Bytes {
+fn png_pixels_bytes(values : Array[Int32]) -> Bytes {
   Bytes::from_array(values.map(value => value.to_byte()))
 }
 
 ///|
 fn png_pixels_check(
   data : Bytes,
-  width : Int,
-  height : Int,
+  width : Int32,
+  height : Int32,
   format : String,
   expected : Bytes,
 ) -> Unit raise Failure {

@@ -1,7 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 — 2026-11-12
 
+- Validate the official current MoonBit toolchain on 2026-11-12 and pin matching
+  compiler/core to `0.10.20+65efd5b93`. Apply the formatter's explicit-width
+  integer and optional-label migrations and regenerate the public interface.
+- Replace the placeholder example with a runnable, self-contained public API
+  example that asserts decoded dimensions and pixels. Check it on all three
+  backends in both pinned-toolchain and official-latest CI matrices.
+- Record exact toolchain versions, reproducible validation commands and local
+  platform requirements in the README.
+- Verify strict checks, release builds, 651 tests and the API example on each
+  of wasm-gc, JavaScript and native (Ubuntu/GCC 11.4.0). Pass 11 Python tests
+  and 1311 independent pixel comparisons with the current toolchain.
 - Run CI on every branch and pull request, with manual dispatch, cancellation of
   superseded runs and job timeouts. Build release artifacts for all three targets
   and retain failing reference inputs with comparison reports.

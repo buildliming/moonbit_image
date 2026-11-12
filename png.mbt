@@ -8,21 +8,21 @@
 ///|
 /// Huffman table entry: symbol value and code length
 priv struct HEntry {
-  symbol : Int
-  length : Int
+  symbol : Int32
+  length : Int32
 }
 
 ///|
 /// Fast lookup Huffman decoder using a prefix table
 priv struct HDecoder {
   table : Array[HEntry]
-  tbl_bits : Int
+  tbl_bits : Int32
 }
 
 ///|
 /// Build a canonical Huffman tree from an array of code lengths
 /// Uses a fast lookup table of size 2^tbl_bits for O(1) symbol decoding
-fn build_huffman(cl : Array[Int], ns : Int) -> HDecoder {
+fn build_huffman(cl : Array[Int32], ns : Int32) -> HDecoder {
   // Determine maximum code length
   let mut ml = 0
   for i = 0; i < ns; i = i + 1 {
@@ -78,8 +78,8 @@ fn build_huffman(cl : Array[Int], ns : Int) -> HDecoder {
 /// A single one-bit code is allowed for literal/distance alphabets, and
 /// an empty distance alphabet is allowed for blocks containing only literals.
 fn checked_huffman(
-  cl : Array[Int],
-  ns : Int,
+  cl : Array[Int32],
+  ns : Int32,
   allow_single : Bool,
   allow_empty : Bool,
 ) -> HDecoder raise Failure {
@@ -116,7 +116,7 @@ fn checked_huffman(
 
 ///|
 /// Reverse the bottom `n` bits of `v` (bit 0 becomes bit n-1, etc.)
-fn reverse_bits(v : Int, n : Int) -> Int {
+fn reverse_bits(v : Int32, n : Int32) -> Int32 {
   let mut result = 0
   let mut x = v
   for i = 0; i < n; i = i + 1 {
@@ -130,7 +130,7 @@ fn reverse_bits(v : Int, n : Int) -> Int {
 /// Decode a single symbol using the fast lookup table
 /// `bits` contains the next `tbl_bits` bits LSB-first; we reverse them because
 /// Huffman codes are transmitted MSB-first but packed LSB-first in DEFLATE
-fn huff_decode(d : HDecoder, bits : Int) -> (Int, Int) {
+fn huff_decode(d : HDecoder, bits : Int32) -> (Int32, Int32) {
   let idx = reverse_bits(bits, d.tbl_bits)
   let e = d.table[idx]
   (e.symbol, e.length)
@@ -138,7 +138,7 @@ fn huff_decode(d : HDecoder, bits : Int) -> (Int, Int) {
 
 ///|
 /// Query the number of lookup bits for this decoder
-fn huff_bits(d : HDecoder) -> Int {
+fn huff_bits(d : HDecoder) -> Int32 {
   d.tbl_bits
 }
 
@@ -181,35 +181,35 @@ let fxd : HDecoder = {
 
 ///|
 /// Base length values for length codes 257-285
-let lbase : Array[Int] = [
+let lbase : Array[Int32] = [
   3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83,
   99, 115, 131, 163, 195, 227, 258,
 ]
 
 ///|
 /// Extra bits for length codes 257-285
-let lextra : Array[Int] = [
+let lextra : Array[Int32] = [
   0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5,
   5, 0,
 ]
 
 ///|
 /// Base distance values for distance codes 0-29
-let dbase : Array[Int] = [
+let dbase : Array[Int32] = [
   1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769,
   1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
 ]
 
 ///|
 /// Extra bits for distance codes 0-29
-let dextra : Array[Int] = [
+let dextra : Array[Int32] = [
   0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11,
   12, 12, 13, 13,
 ]
 
 ///|
 /// Code length alphabet reorder (RFC 1951 §3.2.7)
-let clord : Array[Int] = [
+let clord : Array[Int32] = [
   16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
 ]
 
@@ -225,10 +225,10 @@ let clord : Array[Int] = [
 /// to verify sufficient bits were obtained.
 fn ensure_bits(
   r : BitReader,
-  buf : Int,
-  cnt : Int,
-  need : Int,
-) -> (BitReader, Int, Int) raise Failure {
+  buf : Int32,
+  cnt : Int32,
+  need : Int32,
+) -> (BitReader, Int32, Int32) raise Failure {
   let mut xr = r
   let mut xb = buf
   let mut xc = cnt
@@ -256,7 +256,7 @@ fn ensure_bits(
 
 ///|
 /// Consume `n` bits from the LSB side of the buffer, returning the value and updated state
-fn consume(b : Int, c : Int, n : Int) -> (Int, Int, Int) {
+fn consume(b : Int32, c : Int32, n : Int32) -> (Int32, Int32, Int32) {
   let v = b & ((1 << n) - 1)
   let nb = b >> n
   let nc = c - n
@@ -265,7 +265,7 @@ fn consume(b : Int, c : Int, n : Int) -> (Int, Int, Int) {
 
 ///|
 /// Put lookup bits back before reading the next block or the zlib trailer.
-fn rewind_bits(r : BitReader, count : Int) -> BitReader {
+fn rewind_bits(r : BitReader, count : Int32) -> BitReader {
   let back = count - r.bit_pos
   if back <= 0 {
     { data: r.data, byte_pos: r.byte_pos, bit_pos: -back, }
@@ -283,10 +283,10 @@ fn rewind_bits(r : BitReader, count : Int) -> BitReader {
 /// Return the byte offset after the final block's padding for zlib framing.
 fn deflate_decompress_stream(
   data : Bytes,
-  max_output : Int,
-  window_size : Int,
-  start_pos? : Int = 0,
-) -> (Bytes, Int) raise Failure {
+  max_output : Int32,
+  window_size : Int32,
+  start_pos~ : Int32 = 0,
+) -> (Bytes, Int32) raise Failure {
   let mut r = if start_pos == 0 {
     BitReader::new(data)
   } else {
@@ -350,11 +350,11 @@ fn decode_block(
   out : Buffer,
   lt : HDecoder,
   dt : HDecoder,
-  bb0 : Int,
-  bc0 : Int,
-  max_output : Int,
-  window_size : Int,
-) -> (BitReader, Int, Int) raise Failure {
+  bb0 : Int32,
+  bc0 : Int32,
+  max_output : Int32,
+  window_size : Int32,
+) -> (BitReader, Int32, Int32) raise Failure {
   let mut xr = r
   let mut bb = bb0
   let mut bc = bc0
@@ -479,7 +479,7 @@ fn decode_block(
 /// Returns the literal/length and distance Huffman decoders
 fn read_dyn_header(
   r : BitReader,
-) -> (BitReader, Int, Int, HDecoder, HDecoder) raise Failure {
+) -> (BitReader, Int32, Int32, HDecoder, HDecoder) raise Failure {
   let mut xr = r
   let mut bb = 0
   let mut bc = 0
@@ -641,7 +641,7 @@ fn read_dyn_header(
 /// zlib format: 2-byte header (CMF+FLG) + DEFLATE stream + 4-byte Adler32
 fn zlib_decompress(
   data : Bytes,
-  max_output? : Int = 0x7FFFFFFF,
+  max_output~ : Int32 = 0x7FFFFFFF,
 ) -> Bytes raise Failure {
   if data.length() < 6 {
     raise Failure::Failure("zlib: data too short")
@@ -708,23 +708,23 @@ fn zlib_decompress(
 // PNG filter types
 
 ///|
-const F_NONE : Int = 0
+const F_NONE : Int32 = 0
 
 ///|
-const F_SUB : Int = 1
+const F_SUB : Int32 = 1
 
 ///|
-const F_UP : Int = 2
+const F_UP : Int32 = 2
 
 ///|
-const F_AVG : Int = 3
+const F_AVG : Int32 = 3
 
 ///|
-const F_PAETH : Int = 4
+const F_PAETH : Int32 = 4
 
 ///|
 /// Absolute value
-fn abs_i(x : Int) -> Int {
+fn abs_i(x : Int32) -> Int32 {
   if x < 0 {
     -x
   } else {
@@ -735,7 +735,7 @@ fn abs_i(x : Int) -> Int {
 ///|
 /// Paeth predictor: selects the neighbor (a=left, b=up, c=upper-left)
 /// closest to a+b-c, used by PNG filter type 4
-fn paeth(a : Int, b : Int, c : Int) -> Int {
+fn paeth(a : Int32, b : Int32, c : Int32) -> Int32 {
   let p = a + b - c
   let pa = abs_i(p - a)
   let pb = abs_i(p - b)
@@ -753,10 +753,10 @@ fn paeth(a : Int, b : Int, c : Int) -> Int {
 /// Apply PNG filter reversal to a single row of pixel data
 /// Both row buffers are reused; the first previous row is initialized to zero.
 fn apply_filter(
-  ft : Int,
+  ft : Int32,
   rd : BytesView,
   prev : FixedArray[Byte],
-  bpp : Int,
+  bpp : Int32,
   arr : FixedArray[Byte],
 ) -> Unit raise Failure {
   let sl = rd.length()
@@ -828,19 +828,19 @@ let png_sig : Array[Byte] = [
 
 ///|
 /// PNG color types
-const PC_GRAY : Int = 0
+const PC_GRAY : Int32 = 0
 
 ///|
-const PC_RGB : Int = 2
+const PC_RGB : Int32 = 2
 
 ///|
-const PC_IDX : Int = 3
+const PC_IDX : Int32 = 3
 
 ///|
-const PC_GA : Int = 4
+const PC_GA : Int32 = 4
 
 ///|
-const PC_RGBA : Int = 6
+const PC_RGBA : Int32 = 6
 
 ///|
 /// Check if a chunk type matches a 4-character code
@@ -850,7 +850,7 @@ fn chunk_is(b : BytesView, c0 : Byte, c1 : Byte, c2 : Byte, c3 : Byte) -> Bool {
 
 ///|
 /// Samples per pixel for a given color type
-fn png_spp(ct : Int) -> Int {
+fn png_spp(ct : Int32) -> Int32 {
   match ct {
     0 => 1
     2 => 3
@@ -863,7 +863,7 @@ fn png_spp(ct : Int) -> Int {
 ///|
 /// Output PixelFormat for a given color type
 /// Indexed color outputs RGBA8 after palette expansion
-fn out_fmt(ct : Int, transparent : Bool) -> PixelFormat {
+fn out_fmt(ct : Int32, transparent : Bool) -> PixelFormat {
   match ct {
     PC_GRAY =>
       if transparent {
@@ -881,7 +881,7 @@ fn out_fmt(ct : Int, transparent : Bool) -> PixelFormat {
 
 ///|
 /// Adam7 interlacing parameters: (x_start, y_start, x_step, y_step)
-let a7_params : Array[(Int, Int, Int, Int)] = [
+let a7_params : Array[(Int32, Int32, Int32, Int32)] = [
   (0, 0, 8, 8),
   (4, 0, 8, 8),
   (0, 4, 4, 8),
@@ -893,7 +893,7 @@ let a7_params : Array[(Int, Int, Int, Int)] = [
 
 ///|
 /// Compute sub-image dimensions for an Adam7 pass
-fn a7dims(w : Int, h : Int, pass : Int) -> (Int, Int) {
+fn a7dims(w : Int32, h : Int32, pass : Int32) -> (Int32, Int32) {
   let (xs, ys, xst, yst) = a7_params[pass]
   (
     if w > xs {
@@ -927,9 +927,9 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
   let mut pos = 8
   let mut w = 0
   let mut h = 0
-  let mut bd : Int = 0
-  let mut ct : Int = 0
-  let mut il : Int = 0
+  let mut bd : Int32 = 0
+  let mut ct : Int32 = 0
+  let mut il : Int32 = 0
   let cd = Buffer()
   let mut hi = false // IHDR seen flag
   let mut has_idat = false
@@ -1132,7 +1132,7 @@ pub fn decode_png(data : Bytes) -> Image raise Failure {
 
 ///|
 /// Number of packed bytes in one scanline, without the filter byte.
-fn png_pitch(w : Int, bd : Int, ct : Int) -> Int raise Failure {
+fn png_pitch(w : Int32, bd : Int32, ct : Int32) -> Int32 raise Failure {
   let pitch = (w.to_int64() * bd.to_int64() * png_spp(ct).to_int64() + 7L) / 8L
   if pitch >= 0x7FFFFFFFL {
     raise Failure::Failure("PNG: row too large")
@@ -1143,12 +1143,12 @@ fn png_pitch(w : Int, bd : Int, ct : Int) -> Int raise Failure {
 ///|
 /// Validate the filtered size before inflating or allocating pixel buffers.
 fn png_filtered_size(
-  w : Int,
-  h : Int,
-  bd : Int,
-  ct : Int,
-  il : Int,
-) -> Int raise Failure {
+  w : Int32,
+  h : Int32,
+  bd : Int32,
+  ct : Int32,
+  il : Int32,
+) -> Int32 raise Failure {
   let mut size = 0L
   if il == 0 {
     size = (png_pitch(w, bd, ct).to_int64() + 1L) * h.to_int64()
@@ -1170,11 +1170,11 @@ fn png_filtered_size(
 /// Read a sample at its original precision, before transparency comparison.
 fn png_sample(
   data : FixedArray[Byte],
-  x : Int,
-  channel : Int,
-  bd : Int,
-  sp : Int,
-) -> Int {
+  x : Int32,
+  channel : Int32,
+  bd : Int32,
+  sp : Int32,
+) -> Int32 {
   if bd < 8 {
     let per_byte = 8 / bd
     (data[x / per_byte].to_int() >> (8 - bd - x % per_byte * bd)) &
@@ -1194,11 +1194,11 @@ fn png_sample(
 /// Plain and Adam7 images use the same two reusable row buffers per pass;
 /// no full-image/pass unfiltered buffer or per-row input copy is required.
 fn decode_png_pixels(
-  w : Int,
-  h : Int,
-  bd : Int,
-  ct : Int,
-  il : Int,
+  w : Int32,
+  h : Int32,
+  bd : Int32,
+  ct : Int32,
+  il : Int32,
   pal : Array[Color],
   trns : Bytes,
   dec : Bytes,

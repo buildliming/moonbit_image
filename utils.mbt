@@ -3,14 +3,14 @@
 
 ///|
 /// Bound decoded buffers before allocation, including aggregate GIF frames.
-const MAX_DECODE_BYTES : Int = 268435456
+const MAX_DECODE_BYTES : Int32 = 268435456
 
 ///|
 fn checked_image_size(
-  width : Int,
-  height : Int,
-  bpp : Int,
-) -> Int raise Failure {
+  width : Int32,
+  height : Int32,
+  bpp : Int32,
+) -> Int32 raise Failure {
   if width <= 0 || height <= 0 || bpp <= 0 {
     raise Failure::Failure("Image: invalid dimensions or pixel size")
   }
@@ -27,7 +27,7 @@ fn checked_image_size(
 
 ///|
 /// Read a 16-bit unsigned integer in little-endian byte order
-fn read_u16_le(data : Bytes, pos : Int) -> Int raise Failure {
+fn read_u16_le(data : Bytes, pos : Int32) -> Int32 raise Failure {
   if pos < 0 || pos > data.length() - 2 {
     raise Failure::Failure("read_u16_le: position out of bounds")
   }
@@ -38,7 +38,7 @@ fn read_u16_le(data : Bytes, pos : Int) -> Int raise Failure {
 
 ///|
 /// Read a 32-bit unsigned integer in little-endian byte order
-fn read_u32_le(data : Bytes, pos : Int) -> Int raise Failure {
+fn read_u32_le(data : Bytes, pos : Int32) -> Int32 raise Failure {
   if pos < 0 || pos > data.length() - 4 {
     raise Failure::Failure("read_u32_le: position out of bounds")
   }
@@ -51,7 +51,7 @@ fn read_u32_le(data : Bytes, pos : Int) -> Int raise Failure {
 
 ///|
 /// Read a 32-bit unsigned integer in big-endian byte order
-fn read_u32_be(data : Bytes, pos : Int) -> Int raise Failure {
+fn read_u32_be(data : Bytes, pos : Int32) -> Int32 raise Failure {
   if pos < 0 || pos > data.length() - 4 {
     raise Failure::Failure("read_u32_be: position out of bounds")
   }
@@ -68,21 +68,21 @@ fn read_u32_be(data : Bytes, pos : Int) -> Int raise Failure {
 
 ///|
 /// Pre-computed CRC-32 lookup table (computed once at module init)
-let crc32_table : Array[Int] = make_crc32_table()
+let crc32_table : Array[Int32] = make_crc32_table()
 
 ///|
 /// Logical right shift: forces unsigned semantics by masking out sign-extended bits
-fn lsr8(v : Int) -> Int {
+fn lsr8(v : Int32) -> Int32 {
   (v >> 8) & 0x00FFFFFF
 }
 
 ///|
-fn lsr1(v : Int) -> Int {
+fn lsr1(v : Int32) -> Int32 {
   (v >> 1) & 0x7FFFFFFF
 }
 
 ///|
-fn make_crc32_table() -> Array[Int] {
+fn make_crc32_table() -> Array[Int32] {
   let table = Array::make(256, 0)
   for i = 0; i < 256; i = i + 1 {
     let mut c = i
@@ -101,7 +101,7 @@ fn make_crc32_table() -> Array[Int] {
 ///|
 /// Compute CRC-32 over multiple Bytes segments efficiently without concatenation
 /// Pass previous crc32 result as `initial` to continue (use 0 for first segment)
-fn crc32_update(initial : Int, data : BytesView) -> Int {
+fn crc32_update(initial : Int32, data : BytesView) -> Int32 {
   let mut c = initial ^ 0xFFFFFFFF
   for i = 0; i < data.length(); i = i + 1 {
     let byte_val = data[i].to_int()
@@ -113,7 +113,7 @@ fn crc32_update(initial : Int, data : BytesView) -> Int {
 
 ///|
 /// Convenience: compute CRC-32 of chunk_type + chunk_data without allocating
-fn crc32_chunk(chunk_type : BytesView, chunk_data : BytesView) -> Int {
+fn crc32_chunk(chunk_type : BytesView, chunk_data : BytesView) -> Int32 {
   let initial = crc32_update(0, chunk_type)
   crc32_update(initial, chunk_data)
 }
@@ -124,7 +124,7 @@ fn crc32_chunk(chunk_type : BytesView, chunk_data : BytesView) -> Int {
 
 ///|
 /// Compute Adler-32 checksum over the given bytes
-fn adler32(data : Bytes) -> Int {
+fn adler32(data : Bytes) -> Int32 {
   let mut s1 = 1
   let mut s2 = 0
   let prime = 65521

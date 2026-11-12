@@ -3,12 +3,12 @@
 // Requirements: https://www.w3.org/TR/png-3/#11Chunks
 
 ///|
-fn png_validation_bytes(values : Array[Int]) -> Bytes {
+fn png_validation_bytes(values : Array[Int32]) -> Bytes {
   Bytes::from_array(values.map(fn(value) { value.to_byte() }))
 }
 
 ///|
-fn png_validation_u32(out : Buffer, value : Int) -> Unit {
+fn png_validation_u32(out : Buffer, value : Int32) -> Unit {
   out.write_byte(((value >> 24) & 255).to_byte())
   out.write_byte(((value >> 16) & 255).to_byte())
   out.write_byte(((value >> 8) & 255).to_byte())
@@ -46,13 +46,13 @@ fn png_validation_chunk(kind : Bytes, payload : Bytes) -> Bytes {
 
 ///|
 fn png_validation_header(
-  width : Int,
-  height : Int,
-  depth : Int,
-  color : Int,
-  compression? : Int = 0,
-  filter? : Int = 0,
-  interlace? : Int = 0,
+  width : Int32,
+  height : Int32,
+  depth : Int32,
+  color : Int32,
+  compression~ : Int32 = 0,
+  filter~ : Int32 = 0,
+  interlace~ : Int32 = 0,
 ) -> Bytes {
   let out = Buffer()
   png_validation_u32(out, width)

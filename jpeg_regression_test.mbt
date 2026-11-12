@@ -4,7 +4,7 @@
 // Subsampled fixtures cover chroma interpolation, narrow widths and odd edges.
 
 ///|
-fn jpeg_regression_bytes(values : Array[Int]) -> Bytes {
+fn jpeg_regression_bytes(values : Array[Int32]) -> Bytes {
   Bytes::from_array(values.map(fn(value) { value.to_byte() }))
 }
 

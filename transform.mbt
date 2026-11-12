@@ -12,10 +12,10 @@
 /// Copy a block of bpp bytes from src to dst
 fn copy_pixel(
   src : Bytes,
-  src_off : Int,
+  src_off : Int32,
   dst : Array[Byte],
-  dst_off : Int,
-  bpp : Int,
+  dst_off : Int32,
+  bpp : Int32,
 ) -> Unit {
   for i = 0; i < bpp; i = i + 1 {
     dst[dst_off + i] = src[src_off + i]
@@ -147,10 +147,10 @@ pub fn Image::rotate_270(self : Image) -> Image {
 /// dimensions.
 pub fn Image::crop(
   self : Image,
-  x : Int,
-  y : Int,
-  w : Int,
-  h : Int,
+  x : Int32,
+  y : Int32,
+  w : Int32,
+  h : Int32,
 ) -> Image raise Failure {
   // Bounds checking
   if x < 0 || y < 0 || w <= 0 || h <= 0 {
@@ -193,7 +193,11 @@ pub fn Image::crop(
 ///|
 /// Resize the image using nearest-neighbor sampling.
 /// Uses integer arithmetic: src_x = dst_x * old_w / new_w.
-pub fn Image::resize_nearest(self : Image, new_w : Int, new_h : Int) -> Image {
+pub fn Image::resize_nearest(
+  self : Image,
+  new_w : Int32,
+  new_h : Int32,
+) -> Image {
   if new_w <= 0 || new_h <= 0 {
     return Image::new(
       0,
@@ -254,7 +258,11 @@ pub fn Image::resize_nearest(self : Image, new_w : Int, new_h : Int) -> Image {
 /// Resize the image using bilinear interpolation.
 /// Each output pixel is a weighted blend of its 4 nearest source neighbors.
 /// Interpolation is performed independently on each byte channel.
-pub fn Image::resize_bilinear(self : Image, new_w : Int, new_h : Int) -> Image {
+pub fn Image::resize_bilinear(
+  self : Image,
+  new_w : Int32,
+  new_h : Int32,
+) -> Image {
   if new_w <= 0 || new_h <= 0 {
     return Image::new(
       0,

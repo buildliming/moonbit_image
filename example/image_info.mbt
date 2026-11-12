@@ -1,25 +1,15 @@
-// Image Info CLI — Decode and display image metadata
-// Usage: moon run example/image_info.mbt -- <image-file-path>
-
-fn main {
-  let args = @args
-  let args_count = args.length()
-  if args_count < 2 {
-    println("Usage: moon run example/image_info.mbt -- <image-file>")
-    println("Reads an image file and displays its metadata.")
-    return
-  }
-
-  let path = args[1]
-  let _ = path
-  // File I/O requires native target
-  println("To use this example, build with: moon build --target native")
-  println("Then run the native binary with an image file path.")
-  println("File I/O is available in native target via @fs.read_bytes")
-}
+// Decode an embedded image through the public API on any supported backend.
+// Usage: moon run example --target wasm-gc
 
 ///|
-/// Read a file into Bytes — available in native target
-fn read_file(path : String) -> Bytes {
-  @fs.read_bytes(path)
+fn main raise {
+  // A 1x1 QOI image containing one opaque red pixel.
+  let data = b"qoif\x00\x00\x00\x01\x00\x00\x00\x01\x04\x00\xFE\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
+  let img = @image.decode(data)
+  assert_eq((img.width, img.height), (1, 1))
+  println("Image: \{img.width} x \{img.height}")
+  println("Format: \{@image.pixel_format_name(img.format)}")
+  let pixel = img.get_pixel(0, 0)
+  assert_eq((pixel.r, pixel.g, pixel.b, pixel.a), (255, 0, 0, 255))
+  println("Pixel: R=\{pixel.r} G=\{pixel.g} B=\{pixel.b} A=\{pixel.a}")
 }

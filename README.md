@@ -23,19 +23,35 @@ moon add shunge/image
 
 ## Quick Start
 
+Add the library import to your executable package's `moon.pkg` after installation.
+
 ```moonbit
-fn main {
-  // Auto-detect format and decode
+import {
+  "shunge/image",
+}
+
+pkgtype(kind: "executable")
+```
+
+Save this self-contained example in the same package.
+
+```moonbit
+fn main raise {
+  // A 1x1 QOI image containing one opaque red pixel.
+  let data = b"qoif\x00\x00\x00\x01\x00\x00\x00\x01\x04\x00\xFE\xFF\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
   let img = @image.decode(data)
-  
+  assert_eq((img.width, img.height), (1, 1))
   println("Image: \{img.width} x \{img.height}")
   println("Format: \{@image.pixel_format_name(img.format)}")
-  
-  // Access individual pixels
-  let pixel = img.get_pixel(10, 20)
+  let pixel = img.get_pixel(0, 0)
+  assert_eq((pixel.r, pixel.g, pixel.b, pixel.a), (255, 0, 0, 255))
   println("Pixel: R=\{pixel.r} G=\{pixel.g} B=\{pixel.b} A=\{pixel.a}")
 }
 ```
+
+From this repository, run the bundled copy with `moon run example --target wasm-gc`.
+It prints a 1x1 RGBA8 image and an opaque red pixel. The same example also runs
+with `--target js` and `--target native`.
 
 ## API Reference
 
@@ -74,17 +90,17 @@ pub fn decode_gif_all(data : Bytes) -> AnimatedImage raise Failure  // animated 
 
 ```moonbit
 pub struct Image {
-  width : Int
-  height : Int
+  width : Int32
+  height : Int32
   format : PixelFormat
   data : Bytes  // Raw pixel data, row-major
 }
 
 // Constructors & methods
-pub fn Image::new(width : Int, height : Int, format : PixelFormat, data : Bytes) -> Image
-pub fn Image::get_pixel(self : Image, x : Int, y : Int) -> Color
+pub fn Image::new(width : Int32, height : Int32, format : PixelFormat, data : Bytes) -> Image
+pub fn Image::get_pixel(self : Image, x : Int32, y : Int32) -> Color
 pub fn Image::to_rgba8(self : Image) -> Image
-pub fn Image::bytes_per_pixel(self : Image) -> Int
+pub fn Image::bytes_per_pixel(self : Image) -> Int32
 ```
 
 ### PixelFormat
@@ -130,7 +146,7 @@ shunge/image
 ├── *_regression_test.mbt      # Format-specific independent pixel and malformed-input cases
 ├── decoder_stability_test.mbt # Structured malformed-input stability checks
 │
-├── example/                   # CLI example: image_info
+├── example/                   # Runnable public API example with an embedded image
 ├── tools/                     # Test image generation scripts
 ├── test_images/               # Test images (up to 2048×2048 + real photos)
 ├── ARTICLE.md                 # Article: hand-writing DEFLATE in MoonBit
@@ -293,24 +309,66 @@ Only generated images, build output and local caches are excluded from publishin
 Run strict checks without warning suppression:
 
 ```bash
-moon check --deny-warn
-moon fmt --check
-moon info
-moon test --deny-warn --target wasm-gc
-moon test --deny-warn --target js
-moon test --deny-warn --target native
+moon fmt --check &&
+moon info &&
+for target in wasm-gc js native; do
+  moon check --deny-warn --target "$target" &&
+  moon build --deny-warn --release --target "$target" &&
+  moon test --deny-warn --target "$target" &&
+  moon run example --deny-warn --target "$target" || exit 1
+done
 ```
 
-In a Git checkout, also run `git diff --exit-code -- pkg.generated.mbti` after
+In a Git checkout, also run `git diff --exit-code -- '*.mbti'` after
 `moon info` to check for unintended public API changes.
 
 CI runs the wasm-gc, JavaScript and native targets on Linux. Compiler and core
-are pinned together to `0.10.14+7d59c7ec9`; the reference job uses Node.js 24,
-Python 3.12 and Pillow 12.3.0. Native tests require a supported local C toolchain.
+are pinned together to `0.10.20+65efd5b93`. A second three-target matrix uses
+official `latest` compiler and core to detect subsequent compatibility changes.
+The reference job uses Node.js 24, Python 3.12 and Pillow 12.3.0.
+Native builds and tests require a supported local C toolchain.
 Every branch push and pull request runs CI, which can also be started manually.
-Each target checks types, builds in release mode and runs tests. Superseded runs
-on the same ref are cancelled, and jobs have a 20-minute timeout. Reference
-reports and any failed image inputs are retained as workflow artifacts.
+Each target checks types, builds in release mode, runs tests and executes the
+public API example. Superseded runs on the same ref are cancelled, and jobs have
+a 20-minute timeout. Reference reports and any failed image inputs are retained
+as workflow artifacts.
+
+The official current toolchain was downloaded and checked on 2026-11-12 using
+the [MoonBit installation instructions](https://www.moonbitlang.com/download/).
+The Windows binary archive matched the official SHA256. `moon version --all`
+reported the following versions, with local paths omitted.
+
+```text
+moon 0.1.20261104 (940aa18 2026-11-04)
+moonc v0.10.20+65efd5b93 (2026-11-05)
+moonrun 0.1.20261104 (940aa18 2026-11-04)
+Feature flags enabled: rr_moon_mod,rr_moon_pkg
+```
+
+The matching standard library is `moonbitlang/core 0.10.20+65efd5b93`.
+Decoding uses MoonBit built-ins. Tests import the standard library's Base64
+package, and the example imports this library.
+Source builds require support for the `Int32`/`UInt32` type names, with the
+compiler/core pair above as the verified baseline. The current formatter
+migrates integer type spellings and optional parameter labels (`?` to `~`),
+and regenerates the public interface with explicit widths. Existing callers can
+continue using the `Int`/`UInt` aliases
+on this toolchain. See the [official migration notes](https://www.moonbitlang.com/updates/2026/11/05/index).
+
+Local validation on 2026-11-12 used Windows for wasm-gc/JavaScript and Ubuntu
+under WSL2 with GCC 11.4.0 for native. All three backends passed strict type
+checks, release builds, 651 tests each and the public API example. Formatting
+and repeated public interface generation also passed. The exported interface
+matches the previous version after normalizing integer type aliases.
+Node.js was v24.15.0, Python was 3.13.9 and Pillow was 12.3.0. The 11 Python
+oracle/worker tests and all 1311 independent pixel comparisons passed, including
+300 progressive JPEG cases. Lossless errors were zero and the maximum JPEG
+channel error was three.
+
+Windows native builds need a C toolchain with headers supporting the current
+MoonBit runtime. The local MinGW 8.1 headers lack required Windows API types
+such as `FILE_ID_BOTH_DIR_INFO` and `SCH_CREDENTIALS`. For this setup, the
+validated native workflow uses Ubuntu/GCC 11.4.0, matching CI's Linux platform.
 
 Tests cover exact decoded pixels, row padding, origins, palette/transparency
 handling, PNG filters/Adam7/DEFLATE, GIF composition, JPEG sampling/restarts and

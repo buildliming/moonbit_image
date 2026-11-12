@@ -9,7 +9,7 @@
 //-----------------------------------------------------------------------------
 
 ///|
-fn make_bytes(ints : Array[Int]) -> Bytes {
+fn make_bytes(ints : Array[Int32]) -> Bytes {
   let arr = Array::make(ints.length(), b'\x00')
   for i = 0; i < ints.length(); i = i + 1 {
     arr[i] = ints[i].to_byte()
@@ -25,8 +25,8 @@ fn make_bytes(ints : Array[Int]) -> Bytes {
 /// Verify that a decoded image has the expected dimensions
 fn check_dims(
   img : @image.Image,
-  expected_w : Int,
-  expected_h : Int,
+  expected_w : Int32,
+  expected_h : Int32,
 ) -> Unit raise Failure {
   if img.width != expected_w {
     raise Failure::Failure("Expected width \{expected_w}, got \{img.width}")
@@ -41,12 +41,12 @@ fn check_dims(
 /// Verify a pixel's RGBA color
 fn check_pixel(
   img : @image.Image,
-  x : Int,
-  y : Int,
-  r : Int,
-  g : Int,
-  b : Int,
-  a : Int,
+  x : Int32,
+  y : Int32,
+  r : Int32,
+  g : Int32,
+  b : Int32,
+  a : Int32,
 ) -> Unit raise Failure {
   let c = img.get_pixel(x, y)
   if c.r != r || c.g != g || c.b != b || c.a != a {

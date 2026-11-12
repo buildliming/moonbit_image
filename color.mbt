@@ -21,7 +21,7 @@ pub fn Color::blend(self : Color, other : Color) -> Color {
 
 ///|
 /// Alpha blend with a specific alpha override (0..255)
-pub fn Color::blend_alpha(self : Color, other : Color, alpha : Int) -> Color {
+pub fn Color::blend_alpha(self : Color, other : Color, alpha : Int32) -> Color {
   let effective_a = self.a * alpha / 255
   let src_a = effective_a
   let dst_a = 255 - effective_a
@@ -41,7 +41,7 @@ pub fn Color::invert(self : Color) -> Color {
 ///|
 /// Linear interpolation between two colors (t in 0..255 fixed-point)
 /// Returns an integer-blended color without floating-point
-pub fn Color::lerp(self : Color, other : Color, t : Int) -> Color {
+pub fn Color::lerp(self : Color, other : Color, t : Int32) -> Color {
   let inv_t = 255 - t
   let r = (self.r * inv_t + other.r * t) / 255
   let g = (self.g * inv_t + other.g * t) / 255
@@ -57,7 +57,7 @@ pub fn Color::lerp(self : Color, other : Color, t : Int) -> Color {
 ///|
 /// Convert an RGB color to HSL (Hue 0..360, Saturation 0..100, Lightness 0..100)
 /// Uses integer arithmetic to avoid floating-point precision issues
-pub fn Color::to_hsl(self : Color) -> (Int, Int, Int) {
+pub fn Color::to_hsl(self : Color) -> (Int32, Int32, Int32) {
   let r = self.r
   let g = self.g
   let b = self.b
@@ -116,7 +116,11 @@ pub fn Color::to_hsl(self : Color) -> (Int, Int, Int) {
 
 ///|
 /// Create a Color from HSL values (Hue 0..360, Saturation 0..100, Lightness 0..100)
-pub fn Color::from_hsl(hue : Int, saturation : Int, lightness : Int) -> Color {
+pub fn Color::from_hsl(
+  hue : Int32,
+  saturation : Int32,
+  lightness : Int32,
+) -> Color {
   let h = hue % 360
   let s = if saturation > 100 { 100 } else { saturation }
   let l = if lightness > 100 { 100 } else { lightness }
@@ -150,7 +154,7 @@ pub fn Color::from_hsl(hue : Int, saturation : Int, lightness : Int) -> Color {
 
 ///|
 /// HSL helper: convert hue position to RGB component
-fn hue_to_rgb(p : Int, q : Int, t_raw : Int) -> Int {
+fn hue_to_rgb(p : Int32, q : Int32, t_raw : Int32) -> Int32 {
   let mut t = t_raw
   if t < 0 {
     t = t + 360
@@ -175,7 +179,7 @@ fn hue_to_rgb(p : Int, q : Int, t_raw : Int) -> Int {
 
 ///|
 /// Convert RGB to HSV (Hue 0..360, Saturation 0..100, Value 0..100)
-pub fn Color::to_hsv(self : Color) -> (Int, Int, Int) {
+pub fn Color::to_hsv(self : Color) -> (Int32, Int32, Int32) {
   let r = self.r
   let g = self.g
   let b = self.b
@@ -229,7 +233,7 @@ pub fn Color::to_hsv(self : Color) -> (Int, Int, Int) {
 
 ///|
 /// Create a Color from HSV values (Hue 0..360, Saturation 0..100, Value 0..100)
-pub fn Color::from_hsv(hue : Int, saturation : Int, value : Int) -> Color {
+pub fn Color::from_hsv(hue : Int32, saturation : Int32, value : Int32) -> Color {
   let h = hue % 360
   let s = if saturation > 100 { 100 } else { saturation }
   let v = if value > 100 { 100 } else { value }
@@ -269,7 +273,7 @@ pub fn Color::from_hsv(hue : Int, saturation : Int, value : Int) -> Color {
 /// Compute a simple perceptual color distance (weighted Euclidean)
 /// Uses simplified CIE76-like formula with weighted RGB components.
 /// Returns 0..441 for maximum distance (black vs white at max alpha).
-pub fn Color::distance(self : Color, other : Color) -> Int {
+pub fn Color::distance(self : Color, other : Color) -> Int32 {
   let dr = self.r - other.r
   let dg = self.g - other.g
   let db = self.b - other.b
@@ -352,7 +356,7 @@ pub fn Image::average_color(self : Image) -> Color {
 ///|
 /// Compute a 256-bin luminance histogram from the image
 /// Returns an array[256] of pixel counts, indexed by luminance value (0-255)
-pub fn Image::histogram(self : Image) -> Array[Int] {
+pub fn Image::histogram(self : Image) -> Array[Int32] {
   let bins = Array::make(256, 0)
   let pixel_count = self.width * self.height
 
@@ -395,7 +399,7 @@ pub fn Image::histogram(self : Image) -> Array[Int] {
 /// Brighten the image by adding a delta to all channels
 /// Positive delta brightens, negative darkens. Clamped to 0..255.
 /// Returns a new Image (does not modify self).
-pub fn Image::brighten(self : Image, delta : Int) -> Image {
+pub fn Image::brighten(self : Image, delta : Int32) -> Image {
   let pixel_count = self.width * self.height
   let bpp = self.bytes_per_pixel()
   let out_size = pixel_count * bpp

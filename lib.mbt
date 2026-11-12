@@ -153,7 +153,9 @@ pub fn decode_by_format(
 ///|
 /// Get image dimensions from a file header without decoding pixels
 /// Much faster than decode() for inspecting image metadata
-pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
+pub fn image_dimensions(
+  data : Bytes,
+) -> (Int32, Int32, ImageFormat) raise Failure {
   match detect_format(data) {
     None => raise Failure::Failure("Unsupported or unknown image format")
     Some(format) => {
@@ -178,7 +180,7 @@ pub fn image_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
 
 ///|
 /// Read BMP dimensions from header (fast, no pixel decode)
-fn bmp_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
+fn bmp_dimensions(data : Bytes) -> (Int32, Int32, ImageFormat) raise Failure {
   if data.length() < 26 {
     raise Failure::Failure("BMP: file too small for header reading")
   }
@@ -190,7 +192,7 @@ fn bmp_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
 
 ///|
 /// Read QOI dimensions from header
-fn qoi_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
+fn qoi_dimensions(data : Bytes) -> (Int32, Int32, ImageFormat) raise Failure {
   if data.length() < 14 {
     raise Failure::Failure("QOI: file too small for header reading")
   }
@@ -201,7 +203,7 @@ fn qoi_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
 
 ///|
 /// Read TGA dimensions from header
-fn tga_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
+fn tga_dimensions(data : Bytes) -> (Int32, Int32, ImageFormat) raise Failure {
   if data.length() < 18 {
     raise Failure::Failure("TGA: file too small for header reading")
   }
@@ -212,7 +214,7 @@ fn tga_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
 
 ///|
 /// Read GIF dimensions from header
-fn gif_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
+fn gif_dimensions(data : Bytes) -> (Int32, Int32, ImageFormat) raise Failure {
   if data.length() < 10 {
     raise Failure::Failure("GIF: file too small for header reading")
   }
@@ -223,7 +225,7 @@ fn gif_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
 
 ///|
 /// Read PNG dimensions from IHDR chunk (fast, only parses the first chunk)
-fn png_dimensions(data : Bytes) -> (Int, Int, ImageFormat) raise Failure {
+fn png_dimensions(data : Bytes) -> (Int32, Int32, ImageFormat) raise Failure {
   // PNG: 8-byte signature + 4-byte length + 4-byte "IHDR" + 13-byte IHDR data
   if data.length() < 33 {
     raise Failure::Failure("PNG: file too small for IHDR reading")

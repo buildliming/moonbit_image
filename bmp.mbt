@@ -14,10 +14,10 @@
 // Compression types
 
 ///|
-const BI_RLE8 : Int = 1
+const BI_RLE8 : Int32 = 1
 
 ///|
-const BI_RLE4 : Int = 2
+const BI_RLE4 : Int32 = 2
 
 //-----------------------------------------------------------------------------
 // BMP Decoder
@@ -34,15 +34,15 @@ pub fn decode_bmp(data : Bytes) -> Image raise Failure {
 /// BMP decoder state machine
 priv struct BmpDecoder {
   data : Bytes
-  width : Int
-  height : Int
+  width : Int32
+  height : Int32
   top_down : Bool
-  bpp : Int
-  compression : Int
-  data_offset : Int
-  data_end : Int
-  dib_size : Int
-  palette_count : Int
+  bpp : Int32
+  compression : Int32
+  data_offset : Int32
+  data_end : Int32
+  dib_size : Int32
+  palette_count : Int32
 }
 
 ///|
@@ -206,7 +206,7 @@ fn palette_to_rgba_bytes(palette : Array[Color]) -> Array[Array[Byte]] {
 
 ///|
 /// Row stride in bytes (padded to 4-byte boundary)
-fn bmp_row_stride(width : Int, bpp : Int) -> Int raise Failure {
+fn bmp_row_stride(width : Int32, bpp : Int32) -> Int32 raise Failure {
   let stride = (width.to_int64() * bpp.to_int64() + 31L) / 32L * 4L
   if stride > 0x7FFFFFFFL {
     raise Failure::Failure("BMP: row stride too large")
@@ -218,9 +218,9 @@ fn bmp_row_stride(width : Int, bpp : Int) -> Int raise Failure {
 /// Write a palette color to the output buffer at a pixel position
 fn write_palette_pixel(
   _buf : FixedArray[Byte],
-  dst : Int,
-  idx : Int,
-  num_colors : Int,
+  dst : Int32,
+  idx : Int32,
+  num_colors : Int32,
   palette_rgba : Array[Array[Byte]],
 ) -> Unit raise Failure {
   if idx >= 0 && idx < num_colors {

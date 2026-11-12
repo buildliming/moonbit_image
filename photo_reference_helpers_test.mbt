@@ -4,7 +4,7 @@
 fn photo_reference_compare(
   actual : Bytes,
   expected : Bytes,
-  tolerance : Int,
+  tolerance : Int32,
 ) -> Unit raise {
   assert_eq(actual.length(), expected.length())
   for i = 0; i < expected.length(); i = i + 1 {

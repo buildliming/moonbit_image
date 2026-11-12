@@ -25,8 +25,8 @@
 /// For a 256x256 image, this avoids ~65,000 struct allocations.
 fn lzw_decompress(
   data : Bytes,
-  min_code_size : Int,
-  pixel_count : Int,
+  min_code_size : Int32,
+  pixel_count : Int32,
 ) -> Array[Byte] raise Failure {
   if min_code_size < 2 || min_code_size > 8 {
     raise Failure::Failure("GIF: invalid LZW code size")
@@ -104,10 +104,10 @@ fn lzw_decompress(
 /// Uses bulk byte reading when byte-aligned for codes >= 8 bits.
 fn lzw_read_code(
   data : Bytes,
-  pos : Int,
-  bit_pos : Int,
-  code_size : Int,
-) -> (Int, Int, Int) raise Failure {
+  pos : Int32,
+  bit_pos : Int32,
+  code_size : Int32,
+) -> (Int32, Int32, Int32) raise Failure {
   let mut byte_pos = pos
   let mut bp = bit_pos
   let mut result = 0
@@ -155,16 +155,16 @@ fn lzw_read_code(
 /// This function handles both the normal case and the KwKwK edge case correctly:
 /// when `code == next_code`, output = string(prev_code) + first_char(string(prev_code)).
 fn lzw_decode_string(
-  table_prefix : Array[Int],
-  table_suffix : Array[Int],
+  table_prefix : Array[Int32],
+  table_suffix : Array[Int32],
   stack : Array[Byte],
-  code : Int,
-  prev_code : Int,
-  eoi_code : Int,
-  code_size : Int,
-  next_code : Int,
-  max_code : Int,
-) -> (Int, Int, Int, Int) raise Failure {
+  code : Int32,
+  prev_code : Int32,
+  eoi_code : Int32,
+  code_size : Int32,
+  next_code : Int32,
+  max_code : Int32,
+) -> (Int32, Int32, Int32, Int32) raise Failure {
   let max_table = table_prefix.length()
   let mut c = code
   let mut sp = 0
@@ -236,11 +236,11 @@ pub fn decode_gif(data : Bytes) -> Image raise Failure {
 /// GIF decoder state
 priv struct GifDecoder {
   data : Bytes
-  pos : Int
-  width : Int
-  height : Int
-  global_ct : Array[(Int, Int, Int)] // (R, G, B) tuples
-  bg_color : Int
+  pos : Int32
+  width : Int32
+  height : Int32
+  global_ct : Array[(Int32, Int32, Int32)] // (R, G, B) tuples
+  bg_color : Int32
 }
 
 ///|
@@ -301,10 +301,10 @@ fn GifDecoder::new(data : Bytes) -> GifDecoder raise Failure {
 /// Terminated by a 0-byte count
 fn read_sub_blocks(
   data : Bytes,
-  start_pos : Int,
-  keep? : Bool = true,
-  prefix_bytes? : Int? = None,
-) -> (Bytes, Int) raise Failure {
+  start_pos : Int32,
+  keep~ : Bool = true,
+  prefix_bytes~ : Int32? = None,
+) -> (Bytes, Int32) raise Failure {
   let buf = Buffer()
   let mut pos = start_pos
   while pos < data.length() {
@@ -320,7 +320,7 @@ fn read_sub_blocks(
       // Loop extensions only consume their first three bytes. Still walk and
       // validate the complete chain, without retaining an arbitrary tail.
       let retained = match prefix_bytes {
-        Some(limit) => Int::min(count, Int::max(0, limit - buf.length()))
+        Some(limit) => Int32::min(count, Int32::max(0, limit - buf.length()))
         None => count
       }
       if retained > MAX_DECODE_BYTES - buf.length() {
@@ -336,7 +336,7 @@ fn read_sub_blocks(
 ///|
 /// Build interlace row mapping for 4-pass interlacing
 /// Returns an array mapping source row index to destination row
-fn build_interlace_map(img_h : Int) -> Array[Int] {
+fn build_interlace_map(img_h : Int32) -> Array[Int32] {
   let row_map = Array::make(img_h, 0)
   let mut ri = 0
   // Pass 1: every 8th row starting at 0
@@ -374,7 +374,7 @@ fn build_interlace_map(img_h : Int) -> Array[Int] {
 /// Pre-compute color table as RGBA byte quads for fast pixel writes.
 /// Converts (Int,Int,Int) tuples to [r_byte, g_byte, b_byte, a_byte] arrays,
 /// eliminating per-pixel .to_byte() calls and tuple destructuring.
-fn ct_to_rgba(ct : Array[(Int, Int, Int)]) -> Array[Array[Byte]] {
+fn ct_to_rgba(ct : Array[(Int32, Int32, Int32)]) -> Array[Array[Byte]] {
   let n = ct.length()
   let result = Array::make(n, [b'\x00', b'\x00', b'\x00', b'\xFF'])
   for i = 0; i < n; i = i + 1 {
@@ -399,12 +399,12 @@ pub fn decode_gif_all(data : Bytes) -> AnimatedImage raise Failure {
 ///|
 fn GifDecoder::decode_all(
   self : GifDecoder,
-  first_only? : Bool = false,
+  first_only~ : Bool = false,
 ) -> AnimatedImage raise Failure {
   let mut pos = self.pos
   let mut loop_count = 0
   let frames : Array[Image] = []
-  let delays : Array[Int] = []
+  let delays : Array[Int32] = []
   let mut transparent_idx = -1
   let mut delay = 0
   let mut disposal = 0

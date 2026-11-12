@@ -1,0 +1,5 @@
+import {
+  "shunge/image",
+}
+
+pkgtype(kind: "executable")

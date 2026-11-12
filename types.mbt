@@ -40,10 +40,10 @@ pub enum ImageFormat {
 ///|
 /// A color represented as 8-bit RGBA components
 pub struct Color {
-  r : Int
-  g : Int
-  b : Int
-  a : Int
+  r : Int32
+  g : Int32
+  b : Int32
+  a : Int32
 }
 
 ///|
@@ -53,27 +53,27 @@ pub fn Color::default() -> Color {
 }
 
 ///|
-pub fn Color::new(r : Int, g : Int, b : Int, a : Int) -> Color {
+pub fn Color::new(r : Int32, g : Int32, b : Int32, a : Int32) -> Color {
   { r, g, b, a, }
 }
 
 ///|
-pub fn Color::from_rgb(r : Int, g : Int, b : Int) -> Color {
+pub fn Color::from_rgb(r : Int32, g : Int32, b : Int32) -> Color {
   { r, g, b, a: 255, }
 }
 
 ///|
-pub fn Color::from_gray(v : Int) -> Color {
+pub fn Color::from_gray(v : Int32) -> Color {
   { r: v, g: v, b: v, a: 255, }
 }
 
 ///|
-pub fn Color::with_alpha(self : Color, a : Int) -> Color {
+pub fn Color::with_alpha(self : Color, a : Int32) -> Color {
   { r: self.r, g: self.g, b: self.b, a, }
 }
 
 ///|
-pub fn Color::to_gray(self : Color) -> Int {
+pub fn Color::to_gray(self : Color) -> Int32 {
   // ITU-R BT.601 luma
   (self.r * 299 + self.g * 587 + self.b * 114) / 1000
 }
@@ -86,9 +86,9 @@ pub fn Color::to_gray(self : Color) -> Int {
 /// A decoded image with pixel data
 pub struct Image {
   /// Image width in pixels
-  width : Int
+  width : Int32
   /// Image height in pixels
-  height : Int
+  height : Int32
   /// Pixel format describing the data layout
   format : PixelFormat
   /// Raw pixel data, row-major order (top to bottom)
@@ -97,8 +97,8 @@ pub struct Image {
 
 ///|
 pub fn Image::new(
-  width : Int,
-  height : Int,
+  width : Int32,
+  height : Int32,
   format : PixelFormat,
   data : Bytes,
 ) -> Image {
@@ -107,7 +107,7 @@ pub fn Image::new(
 
 ///|
 /// Number of bytes per pixel for this format
-pub fn Image::bytes_per_pixel(self : Image) -> Int {
+pub fn Image::bytes_per_pixel(self : Image) -> Int32 {
   match self.format {
     PixelFormat::Gray8 => 1
     PixelFormat::GrayA8 => 2
@@ -118,19 +118,19 @@ pub fn Image::bytes_per_pixel(self : Image) -> Int {
 
 ///|
 /// Number of bytes per row (stride) for this image
-pub fn Image::stride(self : Image) -> Int {
+pub fn Image::stride(self : Image) -> Int32 {
   self.width * self.bytes_per_pixel()
 }
 
 ///|
 /// Total size of pixel data in bytes
-pub fn Image::data_size(self : Image) -> Int {
+pub fn Image::data_size(self : Image) -> Int32 {
   self.stride() * self.height
 }
 
 ///|
 /// Get the color at a specific pixel coordinate
-pub fn Image::get_pixel(self : Image, x : Int, y : Int) -> Color {
+pub fn Image::get_pixel(self : Image, x : Int32, y : Int32) -> Color {
   let offset = y * self.stride() + x * self.bytes_per_pixel()
   match self.format {
     PixelFormat::Gray8 => {
@@ -231,28 +231,28 @@ pub struct AnimatedImage {
   /// Array of decoded frames
   frames : Array[Image]
   /// Delay for each frame in centiseconds (1/100 second)
-  delays : Array[Int]
+  delays : Array[Int32]
   /// Canvas width in pixels
-  width : Int
+  width : Int32
   /// Canvas height in pixels
-  height : Int
+  height : Int32
   /// Number of times to loop (0 = infinite)
-  loop_count : Int
+  loop_count : Int32
 }
 
 ///|
 pub fn AnimatedImage::new(
   frames : Array[Image],
-  delays : Array[Int],
-  width : Int,
-  height : Int,
-  loop_count : Int,
+  delays : Array[Int32],
+  width : Int32,
+  height : Int32,
+  loop_count : Int32,
 ) -> AnimatedImage {
   { frames, delays, width, height, loop_count, }
 }
 
 ///|
-pub fn AnimatedImage::frame_count(self : AnimatedImage) -> Int {
+pub fn AnimatedImage::frame_count(self : AnimatedImage) -> Int32 {
   self.frames.length()
 }
 
@@ -265,8 +265,8 @@ pub fn AnimatedImage::frame_count(self : AnimatedImage) -> Int {
 /// Reads bits LSB-first (least significant bit first) as required by DEFLATE
 priv struct BitReader {
   data : Bytes
-  byte_pos : Int
-  bit_pos : Int // 0 = LSB, 7 = MSB (next bit to read)
+  byte_pos : Int32
+  bit_pos : Int32 // 0 = LSB, 7 = MSB (next bit to read)
 }
 
 ///|
@@ -279,8 +279,8 @@ fn BitReader::new(data : Bytes) -> BitReader {
 /// First bit read becomes the least significant bit of the result
 fn BitReader::read_bits(
   self : BitReader,
-  n : Int,
-) -> (BitReader, Int) raise Failure {
+  n : Int32,
+) -> (BitReader, Int32) raise Failure {
   if n == 0 {
     return (self, 0)
   }
@@ -366,7 +366,7 @@ fn BitReader::align_to_byte(self : BitReader) -> BitReader {
 /// Read raw bytes from current byte position (must be byte-aligned)
 fn BitReader::read_bytes(
   self : BitReader,
-  n : Int,
+  n : Int32,
 ) -> (BitReader, Bytes) raise Failure {
   if self.bit_pos != 0 {
     raise Failure::Failure("BitReader: cannot read bytes when not byte-aligned")

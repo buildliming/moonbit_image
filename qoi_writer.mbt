@@ -7,7 +7,7 @@
 // Uses QOI_OP_* constants and qoi_hash from qoi.mbt (same package).
 
 ///|
-const QOI_OP_RUN : Int = 0xC0 // 11xxxxxx
+const QOI_OP_RUN : Int32 = 0xC0 // 11xxxxxx
 
 ///|
 /// Encode an image to QOI (Quite OK Image) format.
@@ -26,7 +26,7 @@ pub fn encode_qoi(image : Image) -> Bytes raise Failure {
 
   // Determine channel count: 3 if all pixels are fully opaque, else 4
   let has_alpha = check_non_opaque_alpha(rgba)
-  let channels : Int = if has_alpha { 4 } else { 3 }
+  let channels : Int32 = if has_alpha { 4 } else { 3 }
 
   // Allocate worst-case output buffer:
   // header (14) + max per-pixel data (pixel_count * 5) + end marker (8)
@@ -90,7 +90,7 @@ pub fn encode_qoi(image : Image) -> Bytes raise Failure {
       run = run + 1
       if run == 62 {
         // Max run length (62) reached, emit RUN chunk and reset
-        let run_byte : Int = QOI_OP_RUN | (run - 1)
+        let run_byte : Int32 = QOI_OP_RUN | (run - 1)
         buf[pos] = run_byte.to_byte()
         pos = pos + 1
         run = 0
@@ -98,7 +98,7 @@ pub fn encode_qoi(image : Image) -> Bytes raise Failure {
     } else {
       // Pixel changed: flush any pending run before encoding the new pixel
       if run > 0 {
-        let run_byte : Int = QOI_OP_RUN | (run - 1)
+        let run_byte : Int32 = QOI_OP_RUN | (run - 1)
         buf[pos] = run_byte.to_byte()
         pos = pos + 1
         run = 0
@@ -130,7 +130,7 @@ pub fn encode_qoi(image : Image) -> Bytes raise Failure {
           if dr >= -2 && dr <= 1 && dg >= -2 && dg <= 1 && db >= -2 && db <= 1 {
             // DIFF encoding: 1 byte
             // dr, dg, db are in [-2, 1], stored as biased values (+2)
-            let byte_val : Int = QOI_OP_DIFF |
+            let byte_val : Int32 = QOI_OP_DIFF |
               ((dr + 2) << 4) |
               ((dg + 2) << 2) |
               (db + 2)
@@ -144,12 +144,12 @@ pub fn encode_qoi(image : Image) -> Bytes raise Failure {
             db_dg <= 7 {
             // LUMA encoding: 2 bytes
             // dg in [-32, 31] stored as biased (+32)
-            let byte1 : Int = QOI_OP_LUMA | (dg + 32)
+            let byte1 : Int32 = QOI_OP_LUMA | (dg + 32)
             buf[pos] = byte1.to_byte()
             pos = pos + 1
             // dr_dg in [-8, 7] stored as biased (+8) in upper 4 bits
             // db_dg in [-8, 7] stored as biased (+8) in lower 4 bits
-            let byte2 : Int = ((dr_dg + 8) << 4) | (db_dg + 8)
+            let byte2 : Int32 = ((dr_dg + 8) << 4) | (db_dg + 8)
             buf[pos] = byte2.to_byte()
             pos = pos + 1
           } else {
@@ -189,7 +189,7 @@ pub fn encode_qoi(image : Image) -> Bytes raise Failure {
 
   // Flush any remaining run after the last pixel
   if run > 0 {
-    let run_byte : Int = QOI_OP_RUN | (run - 1)
+    let run_byte : Int32 = QOI_OP_RUN | (run - 1)
     buf[pos] = run_byte.to_byte()
     pos = pos + 1
   }
@@ -227,7 +227,7 @@ fn check_non_opaque_alpha(image : Image) -> Bool {
 
 ///|
 /// Write a 32-bit unsigned integer in big-endian byte order into a buffer array.
-fn write_u32_be_buf(buf : Array[Byte], pos : Int, value : Int) -> Unit {
+fn write_u32_be_buf(buf : Array[Byte], pos : Int32, value : Int32) -> Unit {
   buf[pos] = ((value >> 24) & 0xFF).to_byte()
   buf[pos + 1] = ((value >> 16) & 0xFF).to_byte()
   buf[pos + 2] = ((value >> 8) & 0xFF).to_byte()

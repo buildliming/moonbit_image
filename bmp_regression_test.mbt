@@ -3,15 +3,15 @@
 // BGRA alpha and the transparent fill for skipped RLE pixels preserve library behavior.
 
 ///|
-fn bmp_regression_bytes(values : Array[Int]) -> Bytes {
+fn bmp_regression_bytes(values : Array[Int32]) -> Bytes {
   Bytes::from_array(values.map(value => value.to_byte()))
 }
 
 ///|
 fn bmp_regression_check(
   data : Bytes,
-  width : Int,
-  height : Int,
+  width : Int32,
+  height : Int32,
   format : String,
   expected : Bytes,
 ) -> Unit raise {

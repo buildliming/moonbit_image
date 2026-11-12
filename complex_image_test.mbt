@@ -1,7 +1,7 @@
 // Complex image tests (128x128) - Auto-generated
 
 ///|
-fn complex_checksum(img : @image.Image) -> (Int, Int, Int) {
+fn complex_checksum(img : @image.Image) -> (Int32, Int32, Int32) {
   let mut sr = 0
   let mut sg = 0
   let mut sb = 0

@@ -7,7 +7,7 @@
 // Helper: compute pixel checksum for verification
 
 ///|
-fn compute_checksum(img : @image.Image) -> (Int, Int, Int) {
+fn compute_checksum(img : @image.Image) -> (Int32, Int32, Int32) {
   let mut sum_r = 0
   let mut sum_g = 0
   let mut sum_b = 0

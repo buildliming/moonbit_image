@@ -20,7 +20,7 @@
 
 ///|
 /// Zigzag scan order (JPEG spec Figure K.2)
-let zigzag : Array[Int] = [
+let zigzag : Array[Int32] = [
   0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48,
   41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15,
   23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62,
@@ -30,7 +30,7 @@ let zigzag : Array[Int] = [
 ///|
 /// IDCT basis coefficients, scaled by 4096:
 /// C(u)/2 * cos((2x+1)*u*pi/16), where C(0)=1/sqrt(2).
-let dct_t : Array[Array[Int]] = [
+let dct_t : Array[Array[Int32]] = [
   [1448, 1448, 1448, 1448, 1448, 1448, 1448, 1448],
   [2009, 1703, 1138, 400, -400, -1138, -1703, -2009],
   [1892, 784, -784, -1892, -1892, -784, 784, 1892],
@@ -51,8 +51,8 @@ let dct_t : Array[Array[Int]] = [
 /// Fields are named differently from BitReader to avoid type ambiguity.
 priv struct JBR {
   buf : Bytes // entropy-coded data (with 0xFF00 stuffing already stripped)
-  bp : Int // current byte position
-  bitp : Int // next bit to read within byte (0=MSB, 7=LSB)
+  bp : Int32 // current byte position
+  bitp : Int32 // next bit to read within byte (0=MSB, 7=LSB)
 }
 
 ///|
@@ -63,7 +63,7 @@ fn JBR::new(data : Bytes) -> JBR {
 ///|
 /// Read n bits MSB-first. Returns (new_reader, value).
 /// Uses bulk byte reading when byte-aligned for efficiency.
-fn JBR::read_bits(self : JBR, n : Int) -> (JBR, Int) raise Failure {
+fn JBR::read_bits(self : JBR, n : Int32) -> (JBR, Int32) raise Failure {
   if n == 0 {
     return (self, 0)
   }
@@ -113,16 +113,16 @@ fn JBR::read_bits(self : JBR, n : Int) -> (JBR, Int) raise Failure {
 ///|
 /// At most 304 integers per table, including all 256 possible symbols.
 priv struct JHT {
-  counts : Array[Int]
-  first_code : Array[Int]
-  first_symbol : Array[Int]
-  symbols : Array[Int]
-  tbl_bits : Int
+  counts : Array[Int32]
+  first_code : Array[Int32]
+  first_symbol : Array[Int32]
+  symbols : Array[Int32]
+  tbl_bits : Int32
 }
 
 ///|
 /// Build canonical code ranges from BITS and HUFFVAL arrays.
-fn build_jht(bits : Array[Int], hv_in : Array[Int]) -> JHT raise Failure {
+fn build_jht(bits : Array[Int32], hv_in : Array[Int32]) -> JHT raise Failure {
   // Find the maximum code length
   let mut max_len = 0
   for l = 1; l <= 16; l = l + 1 {
@@ -157,7 +157,7 @@ fn build_jht(bits : Array[Int], hv_in : Array[Int]) -> JHT raise Failure {
 
 ///|
 /// Decode with at most 16 bounded code-range checks, without a 64K lookup table.
-fn jht_decode(ht : JHT, r : JBR) -> (JBR, Int) raise Failure {
+fn jht_decode(ht : JHT, r : JBR) -> (JBR, Int32) raise Failure {
   let mut reader = r
   let mut code = 0
   for i = 0; i < ht.tbl_bits; i = i + 1 {
@@ -179,7 +179,7 @@ fn jht_decode(ht : JHT, r : JBR) -> (JBR, Int) raise Failure {
 ///|
 /// 2-D IDCT: keep signed precision between passes, then level-shift once.
 /// Int64 intermediates prevent overflow from high-frequency coefficients.
-fn idct_2d(block : Array[Int]) -> Array[Int] {
+fn idct_2d(block : Array[Int32]) -> Array[Int32] {
   let t = Array::make(64, 0L)
   for v = 0; v < 8; v = v + 1 {
     for x = 0; x < 8; x = x + 1 {
@@ -217,7 +217,7 @@ fn idct_2d(block : Array[Int]) -> Array[Int] {
 
 ///|
 /// Decode DC coefficient. Returns (reader, new_value, new_pred).
-fn jpg_dc(r : JBR, ht : JHT, pred : Int) -> (JBR, Int, Int) raise Failure {
+fn jpg_dc(r : JBR, ht : JHT, pred : Int32) -> (JBR, Int32, Int32) raise Failure {
   let (r2, cat) = jht_decode(ht, r)
   if cat > 11 {
     raise Failure::Failure("JPEG: invalid DC category")
@@ -239,7 +239,7 @@ fn jpg_dc(r : JBR, ht : JHT, pred : Int) -> (JBR, Int, Int) raise Failure {
 /// Decode AC coefficients for one 8x8 block.
 /// Writes decoded values to block[] at zigzag positions.
 /// Returns the updated reader.
-fn jpg_ac(r : JBR, ht : JHT, block : Array[Int]) -> JBR raise Failure {
+fn jpg_ac(r : JBR, ht : JHT, block : Array[Int32]) -> JBR raise Failure {
   let mut reader = r
   let mut k = 1
   while k < 64 {
@@ -286,9 +286,9 @@ fn jpg_block(
   r : JBR,
   dc_ht : JHT,
   ac_ht : JHT,
-  qt : Array[Int],
-  dc_pred : Int,
-) -> (JBR, Int, Array[Int]) raise Failure {
+  qt : Array[Int32],
+  dc_pred : Int32,
+) -> (JBR, Int32, Array[Int32]) raise Failure {
   let block = Array::make(64, 0)
   let (r2, _dc_val, ndc) = jpg_dc(r, dc_ht, dc_pred)
   let r3 = jpg_ac(r2, ac_ht, block)
@@ -307,7 +307,7 @@ fn jpg_block(
 ///|
 /// Convert YCbCr to RGB using ITU-R BT.601 coefficients with 12 fractional bits.
 /// All values are clamped to [0, 255].
-fn ycbcr_to_rgb(y : Int, cb : Int, cr : Int) -> (Int, Int, Int) {
+fn ycbcr_to_rgb(y : Int32, cb : Int32, cr : Int32) -> (Int32, Int32, Int32) {
   let cb_off = cb - 128
   let cr_off = cr - 128
 
@@ -330,14 +330,14 @@ fn ycbcr_to_rgb(y : Int, cb : Int, cr : Int) -> (Int, Int, Int) {
 /// Alternate rounding follows the conventional libjpeg triangle upsampler.
 fn jpg_chroma(
   plane : Array[Byte],
-  stride : Int,
-  width : Int,
-  height : Int,
-  x : Int,
-  y : Int,
-  horizontal : Int,
-  vertical : Int,
-) -> Int {
+  stride : Int32,
+  width : Int32,
+  height : Int32,
+  x : Int32,
+  y : Int32,
+  horizontal : Int32,
+  vertical : Int32,
+) -> Int32 {
   let sx = x / horizontal
   let sy = y / vertical
   if horizontal == 1 || width <= 2 {
@@ -383,7 +383,10 @@ fn jpg_chroma(
 
 ///|
 /// Read a complete marker and its bounded payload, accepting marker fill bytes.
-fn jpg_segment(data : Bytes, offset : Int) -> (Int, Int, Int) raise Failure {
+fn jpg_segment(
+  data : Bytes,
+  offset : Int32,
+) -> (Int32, Int32, Int32) raise Failure {
   let mut pos = offset
   if pos >= data.length() || data[pos].to_int() != 0xFF {
     raise Failure::Failure("JPEG: expected marker")
@@ -419,9 +422,9 @@ fn jpg_segment(data : Bytes, offset : Int) -> (Int, Int, Int) raise Failure {
 /// Validate a supported eight-bit DCT frame and return component descriptors.
 fn jpg_frame(
   data : Bytes,
-  pos : Int,
-  end : Int,
-) -> (Int, Int, Array[Int], Array[Int], Array[Int], Array[Int]) raise Failure {
+  pos : Int32,
+  end : Int32,
+) -> (Int32, Int32, Array[Int32], Array[Int32], Array[Int32], Array[Int32]) raise Failure {
   if end - pos < 6 || data[pos].to_int() != 8 {
     raise Failure::Failure("JPEG: requires eight-bit samples")
   }
@@ -492,10 +495,10 @@ fn jpg_finish_segment(reader : JBR) -> Unit raise Failure {
 /// Keep restart boundaries while removing entropy byte stuffing.
 fn jpg_scan_entropy(
   data : Bytes,
-  start : Int,
-  restart_interval : Int,
-  segment_count : Int,
-) -> (Array[Bytes], Int) raise Failure {
+  start : Int32,
+  restart_interval : Int32,
+  segment_count : Int32,
+) -> (Array[Bytes], Int32) raise Failure {
   let segments = []
   let mut bytes = Buffer()
   let mut pos = start
@@ -554,9 +557,9 @@ fn jpg_scan_entropy(
 ///|
 fn jpg_entropy(
   data : Bytes,
-  start : Int,
-  restart_interval : Int,
-  segment_count : Int,
+  start : Int32,
+  restart_interval : Int32,
+  segment_count : Int32,
 ) -> Array[Bytes] raise Failure {
   let (segments, next) = jpg_scan_entropy(
     data, start, restart_interval, segment_count,
@@ -919,7 +922,7 @@ pub fn decode_jpeg(data : Bytes) -> Image raise Failure {
 
 ///|
 /// Read dimensions of a supported baseline/progressive frame without pixels.
-pub fn jpeg_dimensions(data : Bytes) -> (Int, Int) raise Failure {
+pub fn jpeg_dimensions(data : Bytes) -> (Int32, Int32) raise Failure {
   if data.length() < 2 || data[0].to_int() != 0xFF || data[1].to_int() != 0xD8 {
     raise Failure::Failure("JPEG: missing SOI marker")
   }
@@ -945,27 +948,27 @@ pub fn jpeg_dimensions(data : Bytes) -> (Int, Int) raise Failure {
 /// Quantized coefficients survive scans; quantization is latched per component.
 /// The progression map prevents duplicate bands/refinements and bounds scan work.
 priv struct JPGProgress {
-  width : Int
-  height : Int
-  ids : Array[Int]
-  hs : Array[Int]
-  vs : Array[Int]
-  selectors : Array[Int]
-  strides : Array[Int]
-  rows : Array[Int]
-  coefficients : Array[Array[Int]]
-  levels : Array[Array[Int]]
-  quantization : Array[Array[Int]]
+  width : Int32
+  height : Int32
+  ids : Array[Int32]
+  hs : Array[Int32]
+  vs : Array[Int32]
+  selectors : Array[Int32]
+  strides : Array[Int32]
+  rows : Array[Int32]
+  coefficients : Array[Array[Int32]]
+  levels : Array[Array[Int32]]
+  quantization : Array[Array[Int32]]
 }
 
 ///|
 fn jpg_progress_new(
-  width : Int,
-  height : Int,
-  ids : Array[Int],
-  hs : Array[Int],
-  vs : Array[Int],
-  selectors : Array[Int],
+  width : Int32,
+  height : Int32,
+  ids : Array[Int32],
+  hs : Array[Int32],
+  vs : Array[Int32],
+  selectors : Array[Int32],
 ) -> JPGProgress raise Failure {
   let nc = ids.length()
   let mx = (width + hs[0] * 8 - 1) / (hs[0] * 8)
@@ -1008,9 +1011,9 @@ fn jpg_progress_new(
 /// T.81 G.2: DC refinement uses two's complement; AC refines signed magnitude.
 fn jpg_refine_ac(
   reader : JBR,
-  block : Array[Int],
-  index : Int,
-  bit : Int,
+  block : Array[Int32],
+  index : Int32,
+  bit : Int32,
 ) -> JBR raise Failure {
   let (next, correction) = reader.read_bits(1)
   if correction != 0 {
@@ -1023,14 +1026,14 @@ fn jpg_refine_ac(
 fn jpg_progress_ac(
   input : JBR,
   table : JHT,
-  block : Array[Int],
-  offset : Int,
-  first : Int,
-  last : Int,
-  high : Int,
-  low : Int,
-  eob : Int,
-) -> (JBR, Int) raise Failure {
+  block : Array[Int32],
+  offset : Int32,
+  first : Int32,
+  last : Int32,
+  high : Int32,
+  low : Int32,
+  eob : Int32,
+) -> (JBR, Int32) raise Failure {
   let mut reader = input
   let mut run = eob
   let mut k = first
@@ -1124,13 +1127,13 @@ fn jpg_progress_ac(
 fn jpg_progress_scan(
   state : JPGProgress,
   data : Bytes,
-  start : Int,
-  end : Int,
-  qt : Array[Array[Int]],
+  start : Int32,
+  end : Int32,
+  qt : Array[Array[Int32]],
   dc_ht : Array[JHT],
   ac_ht : Array[JHT],
-  restart_interval : Int,
-) -> Int raise Failure {
+  restart_interval : Int32,
+) -> Int32 raise Failure {
   if end - start < 6 {
     raise Failure::Failure("JPEG: short progressive scan")
   }
@@ -1235,7 +1238,7 @@ fn jpg_progress_scan(
       let mcus = if restart_interval == 0 {
         total
       } else {
-        Int::min(restart_interval, total - index * restart_interval)
+        Int32::min(restart_interval, total - index * restart_interval)
       }
       if segments[index].length().to_int64() * 8L <
         mcus.to_int64() * blocks_per_mcu.to_int64() {

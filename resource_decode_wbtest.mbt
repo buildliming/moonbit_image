@@ -13,8 +13,8 @@ fn resource_png_chunk(kind : Bytes, payload : Bytes) -> Bytes {
 
 ///|
 fn resource_png_header(
-  width : Int,
-  height : Int,
+  width : Int32,
+  height : Int32,
   depth : Byte,
   color : Byte,
 ) -> Bytes {

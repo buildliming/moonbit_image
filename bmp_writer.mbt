@@ -14,14 +14,14 @@
 
 ///|
 /// Write a 16-bit unsigned integer in little-endian byte order
-fn write_u16_le(buf : Array[Byte], pos : Int, val : Int) -> Unit {
+fn write_u16_le(buf : Array[Byte], pos : Int32, val : Int32) -> Unit {
   buf[pos] = (val & 0xFF).to_byte()
   buf[pos + 1] = ((val >> 8) & 0xFF).to_byte()
 }
 
 ///|
 /// Write a 32-bit unsigned integer in little-endian byte order
-fn write_u32_le(buf : Array[Byte], pos : Int, val : Int) -> Unit {
+fn write_u32_le(buf : Array[Byte], pos : Int32, val : Int32) -> Unit {
   buf[pos] = (val & 0xFF).to_byte()
   buf[pos + 1] = ((val >> 8) & 0xFF).to_byte()
   buf[pos + 2] = ((val >> 16) & 0xFF).to_byte()
@@ -52,7 +52,7 @@ fn has_alpha(rgba : Image) -> Bool {
 
 ///|
 /// Compute the BMP row stride in bytes, padded to a 4-byte boundary
-fn bmp_encode_stride(width : Int, bpp : Int) -> Int {
+fn bmp_encode_stride(width : Int32, bpp : Int32) -> Int32 {
   let row_bytes = width * bpp / 8
   (row_bytes + 3) / 4 * 4
 }
